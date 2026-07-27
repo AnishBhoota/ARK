@@ -1,0 +1,156 @@
+/* Remove the default margin and scrollbars every browser adds to the page,
+   so our black background truly fills the entire screen edge to edge */
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+}
+
+/* The container that Three.js draws its canvas into. We size it to fill
+   the whole browser window */
+#scene-container {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+/* Three.js will insert a canvas element inside scene-container. We make
+   sure that canvas behaves like a block element with no stray spacing */
+#scene-container canvas {
+  display: block;
+}
+
+/* Unboxed audio controls */
+#audio-controls {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: -apple-system, sans-serif;
+  z-index: 10;
+}
+
+#start-visualizer-button, #mode-toggle-btn {
+  background-color: #111111;
+  color: #eaeaea;
+  border: 1px solid #333333;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  flex: 1; 
+}
+
+#start-visualizer-button:hover, #mode-toggle-btn:hover {
+  background-color: #1c1c1c;
+}
+
+#start-visualizer-button:disabled, #mode-toggle-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+#bass-debug-label {
+  color: #888888;
+  font-size: 11px;
+}
+
+/* Color slider and newly added sliders */
+#color-slider, #cam-slider, #bloom-slider, #radius-slider, #threshold-slider {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  margin-top: 4px;
+  cursor: pointer;
+  background: linear-gradient(to right, #000000, #330000, #660000, #990000, #cc0000, #ff0000);
+  border-radius: 3px;
+  outline: none;
+}
+
+#color-slider::-webkit-slider-thumb, #cam-slider::-webkit-slider-thumb, #bloom-slider::-webkit-slider-thumb, #radius-slider::-webkit-slider-thumb, #threshold-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: #8b0000; 
+  border: 1px solid #330000;
+  cursor: pointer;
+}
+
+#color-slider::-moz-range-thumb, #cam-slider::-moz-range-thumb, #bloom-slider::-moz-range-thumb, #radius-slider::-moz-range-thumb, #threshold-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: #8b0000; 
+  border: 1px solid #330000;
+  cursor: pointer;
+}
+
+#color-slider::-moz-range-track, #cam-slider::-moz-range-track, #bloom-slider::-moz-range-track, #radius-slider::-moz-range-track, #threshold-slider::-moz-range-track {
+  height: 6px;
+  background: linear-gradient(to right, #000000, #330000, #660000, #990000, #cc0000, #ff0000);
+  border-radius: 3px;
+}
+
+/* Top Right UI Container */
+#top-right-ui {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  z-index: 10;
+  font-family: -apple-system, sans-serif;
+}
+
+/* FPS Counter: White text, no box */
+#fps-counter {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+/* Fullscreen Button: Textless icon */
+#fullscreen-btn {
+  background: transparent;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+#fullscreen-btn:hover {
+  opacity: 1.0;
+}
+
+/* Disperse Button */
+#disperse-btn {
+  background-color: #111111;
+  color: #eaeaea;
+  border: 1px solid #333333;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  display: block;
+  transition: background-color 0.2s;
+}
+
+#disperse-btn:hover {
+  background-color: #1c1c1c;
+}

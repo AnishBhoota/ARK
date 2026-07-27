@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio-Reactive Kugelblitz | ARK</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Three.js Core CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- Post-Processing Dependencies (UNPKG CDN) -->
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+</head>
+<body>
+
+  <!-- Container for the Three.js Canvas -->
+  <div id="scene-container"></div>
+
+  <!-- Audio Controls Overlay -->
+  <div id="audio-controls">
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button id="start-visualizer-button">Start Visualizer</button>
+      <button id="mode-toggle-btn">Mode: Spin</button>
+    </div>
+    <div id="bass-debug-label">Bass energy: not started</div>
+    
+    <!-- Settings Icon -->
+    <div id="settings-icon" style="cursor: pointer; font-size: 14px; margin-top: 4px; color: #888888;">⚙️</div>
+
+    <div id="sliders-container" style="display: none; flex-direction: column; gap: 6px; width: 100%;">
+      <!-- Color slider -->
+      <input type="range" id="color-slider" min="0" max="80" step="1" value="50" title="Adjust Particle Color">
+      
+      <!-- New sliders -->
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-size: 10px; color: #888888;">cam</span>
+        <input type="range" id="cam-slider" min="0" max="60" step="1" value="30">
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-size: 10px; color: #888888;">bloom</span>
+        <input type="range" id="bloom-slider" min="0" max="5" step="0.1" value="1.8">
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-size: 10px; color: #888888;">radius</span>
+        <input type="range" id="radius-slider" min="-2" max="2" step="0.01" value="0.45">
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <span style="font-size: 10px; color: #888888;">threshhold</span>
+        <input type="range" id="threshold-slider" min="0" max="0.05" step="0.001" value="0.005">
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Right UI -->
+  <div id="top-right-ui">
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <div id="fps-counter">0 FPS</div>
+      <button id="fullscreen-btn" title="Toggle Fullscreen">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+        </svg>
+      </button>
+    </div>
+    <button id="disperse-btn">Disperse</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
