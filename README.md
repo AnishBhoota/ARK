@@ -34,5 +34,6 @@ Interactive web-based 3d particle visualizer built with Three.js  The applicatio
 
 ## <span style="color: yellow">How to run</span>
 1. Clone/Download this repository to your local machine.
-2. Open (simply double click) the `index.html` file directly in a modern web 
+2. Open (simply double click) the `index.html` file directly in a modern web
+3. Or simply click [anishbhoota.github.io/ARK/](anishbhoota.github.io/ARK/)
 
