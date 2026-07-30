@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio-Reactive Kugelblitz | ARK</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Three.js Core CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- Post-Processing Dependencies -->
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+</head>
+<body>
+
+  <!-- Three.js Canvas -->
+  <div id="scene-container"></div>
+
+  <!-- Left UI -->
+  <div id="audio-controls">
+
+    <button id="mode-toggle-btn">Mode: Spin</button>
+
+    <div id="bass-debug-label">Loading </div>
+
+    <div id="icon-row">
+      <div id="settings-icon">⚙️</div>
+      <div id="reset-icon" title="Reset sliders to defaults">⟲</div>
+    </div>
+
+    <div id="sliders-container">
+
+      <div>
+        <span>gradient</span>
+        <input type="range" id="gradient-slider" min="0" max="80" step="1" value="31">
+      </div>
+
+      <div>
+        <span>cam</span>
+        <input type="range" id="cam-slider" min="0" max="60" step="1" value="30">
+      </div>
+
+      <div>
+        <span>bloom</span>
+        <input type="range" id="bloom-slider" min="0" max="5" step="0.1" value="1.8">
+      </div>
+
+      <div>
+        <span>radius</span>
+        <input type="range" id="radius-slider" min="-2" max="2" step="0.01" value="0.45">
+      </div>
+
+      <div>
+        <span>threshold</span>
+        <input type="range" id="threshold-slider" min="0" max="0.05" step="0.001" value="0.005">
+      </div>
+
+      <div>
+        <span>streams</span>
+        <input type="range" id="streams-slider" min="0" max="300" step="1" value="60">
+      </div>
+
+      <div>
+        <span>filaments</span>
+        <input type="range" id="filaments-slider" min="0" max="300" step="1" value="100">
+      </div>
+
+      <div>
+        <span>explosions</span>
+        <input type="range" id="explosions-slider" min="0" max="120" step="1" value="40">
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Top Right UI -->
+  <div id="top-right-ui">
+    <div id="fps-counter">0 FPS</div>
+    <button id="disperse-btn">Disperse</button>
+  </div>
+
+  <!-- Always-visible UI toggle -->
+  <button id="toggle-ui-button">UI</button>
+
+  <script src="app.js"></script>
+
+</body>
+</html>

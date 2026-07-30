@@ -1,0 +1,20 @@
+{
+  "name": "ark-copy",
+  "version": "1.0.0",
+  "description": "Interactive web-based 3d particle visualizer built with Three.js  The application renders a complex particle sphere with multiple organic layers including: core particles, surface filaments, internal streams, bursts, and solar flares that react dynamically to live system audio input.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "43.2.0"
+  },
+  "allowScripts": {
+    "electron@43.2.0": true
+  }
+}
