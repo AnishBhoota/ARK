@@ -7,10 +7,15 @@ const baseColor = new THREE.Color(0x250101); // Your default load-in color
 //HARDCODED VALUE ; maxColor ; bright red THREE.Color used as the high end of the dispersion color blend
 const maxColor = new THREE.Color(0xff0000);  // Bright red when dispersed
 
-const activeColor = new THREE.Color(); 
+const activeColor = new THREE.Color();
 //HARDCODED VALUE ; lastAppliedColorHex ; sentinel of -1 forces the very first frame to apply a color since no real hex value equals -1
-let lastAppliedColorHex = -1; 
+let lastAppliedColorHex = -1;
 
+//UI
+const toggleUIButton = document.getElementById("toggle-ui-button");
+const audioControls = document.getElementById("audio-controls");
+const topRightUI = document.getElementById("top-right-ui");
+let uiHidden = false;
 
 const scene = new THREE.Scene();
 //HARDCODED VALUE ; scene.background ; pure black background behind the particle ball
@@ -45,6 +50,9 @@ composer.addPass(new THREE.RenderPass(scene, camera));
 
 //HARDCODED VALUE ; bloomPass ; strength 1.8 controls glow intensity, radius 0.45 controls how far the glow spreads, and threshold 0.05 controls how bright a pixel must be before it blooms
 let BLOOM_VAL = 1.8; //1.8 default
+//HARDCODED VALUE ; PULSE_EXPANSION_SCALE ; multiplies every beat driven expansion effect below (the main sphere and all filament, stream, and flare layers), change this one value to scale the whole audio expansion effect up or down everywhere at once
+let BLOOM_BRIGHTNESS_SCALE = 1.8;
+let PULSE_EXPANSION_SCALE = 0.45;
 const bloomPass = new THREE.UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
   BLOOM_VAL,  //Bloom strength
@@ -66,7 +74,7 @@ scene.add(particleBall);
 //Glow texture
 function createGlowTexture() {
   //HARDCODED VALUE ; size ; pixel resolution of the generated glow sprite texture used by every particle material
-  const size = 64;
+  const size = 128;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -98,9 +106,18 @@ function randomGaussian() {
 let beatIntensity = 0;
 let beatPulse = 0;
 
-function triggerRandomParticleBeat(energy) {
-  //HARDCODED VALUE ; beat cap and multiplier ; 1.8 is the max beat intensity allowed and 1.725 scales incoming bass energy into that range
-  beatIntensity = Math.min(1.8, energy * 1.725);
+//HARDCODED VALUE ; BASS_SENSITIVITY ; raise to make kicks/bass punch the visuals harder
+const BASS_SENSITIVITY = 15.0;
+//HARDCODED VALUE ; TREBLE_SENSITIVITY ; raise to make hihats/cymbals punch the visuals harder
+const TREBLE_SENSITIVITY = 11.0;
+//HARDCODED VALUE ; BASELINE_FOLLOW_SPEED ; how fast the adaptive "quiet floor" tracks the song's current loudness, lower makes hits stand out more against it
+const BASELINE_FOLLOW_SPEED = 1.5;
+//HARDCODED VALUE ; PULSE_DECAY_SPEED ; how quickly the pulse falls back to rest each frame, raise for a snappier decay
+const PULSE_DECAY_SPEED = 15.0;
+
+function triggerRandomParticleBeat(spikeIntensity, sensitivity) {
+  //HARDCODED VALUE ; beat cap ; 1.8 is the max beat intensity allowed no matter how hard the hits stack up
+  beatIntensity = Math.min(1.8, beatIntensity + spikeIntensity * sensitivity);
 }
 
 //Main Sphere
@@ -130,7 +147,7 @@ function createInnerCore() {
   points.userData.basePositions = positions.slice();
   points.userData.velocity = new Float32Array(count * 3);
   //HARDCODED VALUE ; reactivity ; how strongly this layer reacts to the audio beat pulse, higher means more movement
-  points.userData.reactivity = 1.30;
+  points.userData.reactivity = 1.3;
   return points;
 }
 
@@ -142,7 +159,7 @@ function createThickOuterShell() {
   for (let i = 0; i < count; i++) {
     const dir = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize();
     //HARDCODED VALUE ; r ; shell radius range, particles land between 4.5 and 4.5+1.7 units from center
-    const r = 4.5 + (Math.random() * 1.7); 
+    const r = 4.5 + (Math.random() * 1.7);
     const pt = dir.multiplyScalar(r);
     positions[i * 3] = pt.x; positions[i * 3 + 1] = pt.y; positions[i * 3 + 2] = pt.z;
   }
@@ -160,7 +177,7 @@ function createThickOuterShell() {
   points.userData.basePositions = positions.slice();
   points.userData.velocity = new Float32Array(count * 3);
   //HARDCODED VALUE ; reactivity ; how strongly this layer reacts to the audio beat pulse
-  points.userData.reactivity = 1.0;
+  points.userData.reactivity = 1.3;
   return points;
 }
 
@@ -182,14 +199,14 @@ function createOuterHaloCloud() {
 
   //HARDCODED VALUE ; material ; point size 0.2 and opacity 0.25 make halo particles bigger but much more transparent than the core
   const material = new THREE.PointsMaterial({
-    color: OVERRIDE_COLOR, 
-    size: 0.2, 
-    map: glowTexture, 
+    color: OVERRIDE_COLOR,
+    size: 0.2,
+    map: glowTexture,
     transparent: true,
-    opacity: 0.25, 
-    depthWrite: false, 
-    blending: THREE.AdditiveBlending, 
-    sizeAttenuation: true 
+    opacity: 0.25,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true
   });
 
   const points = new THREE.Points(geometry, material);
@@ -197,6 +214,23 @@ function createOuterHaloCloud() {
   points.userData.velocity = new Float32Array(count * 3);
   //HARDCODED VALUE ; reactivity ; how strongly this layer reacts to the audio beat pulse, kept low so the halo stays calm
   points.userData.reactivity = 0.15;
+
+  // Per particle random wander: each halo particle gets its own random 3D
+  // direction and its own random speed, so they drift independently
+  // instead of all moving together as one rigid rotating cloud.
+  const driftAxis = new Float32Array(count * 3);
+  const driftSpeed = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const axis = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize();
+    driftAxis[i * 3] = axis.x;
+    driftAxis[i * 3 + 1] = axis.y;
+    driftAxis[i * 3 + 2] = axis.z;
+    //HARDCODED VALUE ; driftSpeed range ; each particle wanders at its own random speed between 0.1 and 0.5
+    driftSpeed[i] = 0.1 + Math.random() * 0.4;
+  }
+  points.userData.driftAxis = driftAxis;
+  points.userData.driftSpeed = driftSpeed;
+
   return points;
 }
 
@@ -207,11 +241,11 @@ const outerHalo = createOuterHaloCloud();
 particleBall.add(innerCore);
 particleBall.add(outerShell);
 // ADDED BACK TO SCENE for independent rotation
-scene.add(outerHalo); 
+scene.add(outerHalo);
 
 //STREAM SYSTEM
 //HARDCODED VALUE ; NUM_INTERNAL_STREAMS ; how many internal stream ribbons exist at once inside the ball
-const NUM_INTERNAL_STREAMS = 30;
+let NUM_INTERNAL_STREAMS = 60; //default 30
 const internalStreamGroup = new THREE.Group();
 particleBall.add(internalStreamGroup);
 const internalStreamData = [];
@@ -275,9 +309,26 @@ for (let s = 0; s < NUM_INTERNAL_STREAMS; s++) {
   internalStreamGroup.add(st.mesh);
 }
 
+// Lets the streams slider add or remove streams while the app is running,
+// instead of only being read once at startup.
+function setInternalStreamCount(target) {
+  while (internalStreamData.length < target) {
+    const st = initInternalStream();
+    st.life = Math.random() * st.maxLife;
+    internalStreamData.push(st);
+    internalStreamGroup.add(st.mesh);
+  }
+  while (internalStreamData.length > target) {
+    const removed = internalStreamData.pop();
+    internalStreamGroup.remove(removed.mesh);
+    removed.mesh.geometry.dispose();
+    removed.mesh.material.dispose();
+  }
+}
+
 //Surface Filaments
 //HARDCODED VALUE ; NUM_SURFACE_FILAMENTS ; how many filament ribbons exist on the surface at once
-const NUM_SURFACE_FILAMENTS = 100;
+let NUM_SURFACE_FILAMENTS = 100;
 const surfaceFilamentGroup = new THREE.Group();
 particleBall.add(surfaceFilamentGroup);
 const surfaceFilamentData = [];
@@ -287,7 +338,7 @@ function initSurfaceFilament() {
   const particleCount = 600 + Math.floor(Math.random() * 400);
   //HARDCODED VALUE ; sphereRadius ; radius of the sphere surface the filament arcs across
   const sphereRadius = 6.2;
-  
+
   const p1 = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize().multiplyScalar(sphereRadius);
   const p2 = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize().multiplyScalar(sphereRadius);
   //HARDCODED VALUE ; mid arc height ; how far the filament's midpoint bulges outward past the sphere surface, between 1.2 and 2.2 extra units
@@ -342,9 +393,26 @@ for (let f = 0; f < NUM_SURFACE_FILAMENTS; f++) {
   surfaceFilamentGroup.add(fil.mesh);
 }
 
+// Lets the filaments slider add or remove filaments while the app is
+// running, instead of only being read once at startup.
+function setSurfaceFilamentCount(target) {
+  while (surfaceFilamentData.length < target) {
+    const fil = initSurfaceFilament();
+    fil.life = Math.random() * fil.maxLife;
+    surfaceFilamentData.push(fil);
+    surfaceFilamentGroup.add(fil.mesh);
+  }
+  while (surfaceFilamentData.length > target) {
+    const removed = surfaceFilamentData.pop();
+    surfaceFilamentGroup.remove(removed.mesh);
+    removed.mesh.geometry.dispose();
+    removed.mesh.material.dispose();
+  }
+}
+
 //CME's
 //HARDCODED VALUE ; NUM_MINI_EXPLOSIONS ; how many mini explosion bursts exist at once
-const NUM_MINI_EXPLOSIONS = 20;
+let NUM_MINI_EXPLOSIONS = 40; //20 default
 const explosionsGroup = new THREE.Group();
 particleBall.add(explosionsGroup);
 const explosionsData = [];
@@ -353,13 +421,13 @@ function initMiniExplosion() {
   //HARDCODED VALUE ; particleCount ; each explosion gets between 200 and 300 particles
   const particleCount = 200 + Math.floor(Math.random() * 100);
   //HARDCODED VALUE ; sphereRadius ; radius of the sphere surface where explosions originate
-  const sphereRadius = 6.2; 
+  const sphereRadius = 6.2;
   const centerP = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize().multiplyScalar(sphereRadius);
 
   const rawPositions = new Float32Array(particleCount * 3);
   const velocities = new Float32Array(particleCount * 3);
-  //HARDCODED VALUE ; baseSpeed ; base outward speed of an explosion's particles, between 2.0 and 4.5
-  const baseSpeed = 2.0 + Math.random() * 2.5;
+  //HARDCODED VALUE ; baseSpeed ; base outward speed of an explosion's particles, drawn between 0.1 and 4.0
+  const baseSpeed = Math.random() * (4 - 0.1) + 0.1;
 
   for (let i = 0; i < particleCount; i++) {
     rawPositions[i * 3]     = centerP.x;
@@ -380,7 +448,7 @@ function initMiniExplosion() {
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(particleCount * 3), 3));
-  
+
   //HARDCODED VALUE ; material ; point size 0.10 and full opacity 1.0 so explosions read as bright flashes
   const material = new THREE.PointsMaterial({
     color: OVERRIDE_COLOR,
@@ -411,6 +479,135 @@ for (let e = 0; e < NUM_MINI_EXPLOSIONS; e++) {
   exp.life = Math.random() * exp.maxLife;
   explosionsData.push(exp);
   explosionsGroup.add(exp.mesh);
+}
+
+// Lets the explosions slider add or remove explosions while the app is
+// running, instead of only being read once at startup.
+function setMiniExplosionCount(target) {
+  while (explosionsData.length < target) {
+    const exp = initMiniExplosion();
+    exp.life = Math.random() * exp.maxLife;
+    explosionsData.push(exp);
+    explosionsGroup.add(exp.mesh);
+  }
+  while (explosionsData.length > target) {
+    const removed = explosionsData.pop();
+    explosionsGroup.remove(removed.mesh);
+    removed.mesh.geometry.dispose();
+    removed.mesh.material.dispose();
+  }
+}
+
+//AUDIO EXPLOSIONS - separate from the mini explosions above, these only spawn on big beat hits
+let explosionCooldown = 0;
+const audioExplosionsGroup = new THREE.Group();
+particleBall.add(audioExplosionsGroup);
+const audioExplosionsData = [];
+
+function initAudioExplosion() {
+  //HARDCODED VALUE ; particleCount ; each beat burst gets between 400 and 800 particles
+  const particleCount = 400 + Math.floor(Math.random() * 400);
+  //HARDCODED VALUE ; sphereRadius ; radius of the sphere surface where the burst originates
+  const sphereRadius = 6.2;
+  const centerP = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize().multiplyScalar(sphereRadius);
+
+  const rawPositions = new Float32Array(particleCount * 3);
+  const velocities = new Float32Array(particleCount * 3);
+  //HARDCODED VALUE ; baseSpeed ; base outward speed of a beat burst's particles, drawn between 2 and 6
+  const baseSpeed = 2 + Math.random() * 4;
+
+  for (let i = 0; i < particleCount; i++) {
+    rawPositions[i * 3]     = centerP.x;
+    rawPositions[i * 3 + 1] = centerP.y;
+    rawPositions[i * 3 + 2] = centerP.z;
+
+    let dir = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize();
+    if (dir.dot(centerP) < 0) {
+      dir.negate();
+    }
+
+    const speed = baseSpeed * (0.3 + Math.random() * 0.7);
+    velocities[i * 3]     = dir.x * speed;
+    velocities[i * 3 + 1] = dir.y * speed;
+    velocities[i * 3 + 2] = dir.z * speed;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(particleCount * 3), 3));
+
+  const material = new THREE.PointsMaterial({
+    color: OVERRIDE_COLOR,
+    size: 0.22,
+    map: glowTexture,
+    transparent: true,
+    opacity: 1.0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true
+  });
+
+  const mesh = new THREE.Points(geometry, material);
+
+  return {
+    mesh,
+    particleCount,
+    rawPositions,
+    velocities,
+    life: 0,
+    //HARDCODED VALUE ; maxLife ; each beat burst lives between 1.5 and 3.0 seconds before fading out
+    maxLife: 1.5 + Math.random() * 1.5
+  };
+}
+
+function updateAudioExplosions(deltaTime) {
+  for (let s = audioExplosionsData.length - 1; s >= 0; s--) {
+    const exp = audioExplosionsData[s];
+    exp.life += deltaTime;
+
+    let lifeRatio = exp.life / exp.maxLife;
+    if (lifeRatio > 1.0) lifeRatio = 1.0;
+
+    let opacity = 1.0;
+    if (lifeRatio > 0.3) {
+       opacity = 1.0 - ((lifeRatio - 0.3) / 0.7);
+    }
+    exp.mesh.material.opacity = opacity;
+
+    const posAttr = exp.mesh.geometry.getAttribute('position');
+
+    for (let i = 0; i < exp.particleCount; i++) {
+      const idx = i * 3;
+      exp.rawPositions[idx]     += exp.velocities[idx] * deltaTime;
+      exp.rawPositions[idx + 1] += exp.velocities[idx + 1] * deltaTime;
+      exp.rawPositions[idx + 2] += exp.velocities[idx + 2] * deltaTime;
+
+      const dispX = (Math.sin(i * 123.4) * 50.0) + Math.sin(totalElapsedTime + i) * 15.0;
+      const dispY = (Math.cos(i * 567.8) * 50.0) + Math.cos(totalElapsedTime + i) * 15.0;
+      const dispZ = (Math.sin(i * 901.2) * 50.0) + Math.sin(totalElapsedTime + i) * 15.0;
+
+      _tempVector.set(
+        exp.rawPositions[idx] + dispX * easeDisperse,
+        exp.rawPositions[idx + 1] + dispY * easeDisperse,
+        exp.rawPositions[idx + 2] + dispZ * easeDisperse
+      );
+
+      const fluidScale = calculateWobbleScale(_tempVector);
+      const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
+      const twinkle = 1.0 + (Math.abs(Math.sin(totalElapsedTime * 10.0 + i)) * easeDisperse * 1.5);
+      const totalScale = fluidScale * pulseShift * twinkle;
+
+      posAttr.setXYZ(i, _tempVector.x * totalScale, _tempVector.y * totalScale, _tempVector.z * totalScale);
+    }
+
+    posAttr.needsUpdate = true;
+
+    if (exp.life >= exp.maxLife) {
+      audioExplosionsGroup.remove(exp.mesh);
+      exp.mesh.geometry.dispose();
+      exp.mesh.material.dispose();
+      audioExplosionsData.splice(s, 1);
+    }
+  }
 }
 
 //Massive Flares
@@ -468,7 +665,7 @@ function initMassiveSolarFlare() {
   const progress = new Float32Array(totalParticles);
   const streamIndices = new Int32Array(totalParticles);
   const particleSpeeds = new Float32Array(totalParticles);
-  const particleStates = new Uint8Array(totalParticles); 
+  const particleStates = new Uint8Array(totalParticles);
   const sweepLife = new Float32Array(totalParticles);
   const maxSweepLife = new Float32Array(totalParticles);
   const sweepDirs = new Float32Array(totalParticles * 3);
@@ -516,7 +713,7 @@ function spawnMassiveSolarFlare() {
 }
 
 //HARDCODED VALUE ; initial flare count ; number of solar flares spawned immediately when the scene loads
-for (let i = 0; i < 6; i++) {
+for (let i = 0; i < 4; i++) {
   spawnMassiveSolarFlare();
 }
 
@@ -539,9 +736,9 @@ let currentDisperseFactor = 0;
 let easeDisperse = 0;
 
 //HARDCODED VALUE ; DISPERSE_SPEED ; how quickly particles fly outward when dispersion is triggered
-const DISPERSE_SPEED = 0.5;   
+const DISPERSE_SPEED = 0.5;
 //HARDCODED VALUE ; AGGREGATE_SPEED ; how quickly particles pull back together when aggregation is triggered, slower than dispersing
-const AGGREGATE_SPEED = 0.2; 
+const AGGREGATE_SPEED = 0.2;
 
 const disperseBtn = document.getElementById('disperse-btn');
 if (disperseBtn) {
@@ -561,7 +758,7 @@ if (disperseBtn) {
 //HARDCODED VALUE ; INITIAL_SPIN_Y ; the fast spin speed the ball has right when the page loads
 const INITIAL_SPIN_Y = 5.0;
 //HARDCODED VALUE ; IDLE_SPIN_Y ; the slow resting spin speed the ball settles into around the Y axis when nothing is dragging it
-const IDLE_SPIN_Y    = 0.2;
+const IDLE_SPIN_Y    = 0.3;
 //HARDCODED VALUE ; IDLE_SPIN_X ; the resting spin speed around the X axis, zero means it never tips forward or back on its own
 const IDLE_SPIN_X    = 0;
 
@@ -573,7 +770,7 @@ if (modeToggleBtn) {
       interactionMode = 'move';
       modeToggleBtn.textContent = 'Mode: Move';
       if (disperseBtn) disperseBtn.style.display = 'none';
-      
+
       //Force aggregate if user toggles to move mode while dispersed
       if (isDispersed) {
         isDispersed = false;
@@ -597,7 +794,7 @@ let jellyImpactPoint = new THREE.Vector3(0, 0, 1);
 let jellyWobbleEnergy = 0;
 let maxDragSpeed = 0;
 //HARDCODED VALUE ; DRAG_SPEED_THRESHOLD ; how fast a drag flick must be before it triggers the jelly wobble effect on release
-const DRAG_SPEED_THRESHOLD = 100.0; 
+const DRAG_SPEED_THRESHOLD = 100.0;
 
 let ballPos = new THREE.Vector3(0, 0, 0);
 let ballVel = new THREE.Vector3(0, 0, 0);
@@ -610,7 +807,7 @@ let wobbleAxis = new THREE.Vector3(0, 1, 0);
 
 const raycaster = new THREE.Raycaster();
 //HARDCODED VALUE ; raycaster point threshold ; how close the mouse ray needs to be to a particle point to count as a hit, bigger makes points easier to grab
-raycaster.params.Points.threshold = 0.8; 
+raycaster.params.Points.threshold = 0.8;
 const mouseNDC = new THREE.Vector2();
 
 renderer.domElement.addEventListener('mousedown', (e) => {
@@ -635,7 +832,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     let hitPoint = new THREE.Vector3();
     if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) {
       //HARDCODED VALUE ; grab radius ; in move mode, a click must land within 10 units of the ball's center to start dragging it
-      if (hitPoint.distanceTo(ballPos) < 10.0) { 
+      if (hitPoint.distanceTo(ballPos) < 10.0) {
         isDragging = true;
         ballDragOffset.subVectors(ballPos, hitPoint);
         renderer.domElement.style.cursor = 'grabbing';
@@ -646,7 +843,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
 
 window.addEventListener('mousemove', (e) => {
   if (!isDragging) return;
-  
+
   if (interactionMode === 'spin') {
     const dx = e.clientX - lastMouseX;
     const dy = e.clientY - lastMouseY;
@@ -666,21 +863,21 @@ window.addEventListener('mousemove', (e) => {
     mouseNDC.x = (e.clientX / window.innerWidth) * 2 - 1;
     mouseNDC.y = -(e.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouseNDC, camera);
-    
+
     let hitPoint = new THREE.Vector3();
     if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) {
       let targetPos = hitPoint.clone().add(ballDragOffset);
-      
+
       let dist = targetPos.length();
       //HARDCODED VALUE ; maxDist ; how far the ball can be dragged from center before the elastic stretch resistance kicks in
-      let maxDist = 10.0; 
+      let maxDist = 10.0;
       if (dist > maxDist) {
         let excess = dist - maxDist;
         //HARDCODED VALUE ; stretch formula ; controls how the ball resists being dragged past maxDist, 0.4 softens the log curve and 2.5 scales how much extra stretch is visible
         let stretched = maxDist + Math.log(1 + excess * 0.4) * 2.5;
         targetPos.normalize().multiplyScalar(stretched);
       }
-      
+
       //HARDCODED VALUE ; velocity multiplier ; converts the drag distance moved this frame into ball velocity, higher feels snappier
       ballVel.copy(targetPos).sub(ballPos).multiplyScalar(30.0);
       ballPos.copy(targetPos);
@@ -711,21 +908,21 @@ const _normPos = new THREE.Vector3();
 function calculateWobbleScale(posVector) {
   if (!posVector || posVector.lengthSq() < 0.0001) return 1.0;
   _normPos.copy(posVector).normalize();
-  
+
   let scale = 1.0;
 
   if (jellyWobbleEnergy > 0.001) {
     const dragDot = Math.max(0, _normPos.dot(jellyImpactPoint));
-    //HARDCODED VALUE ; fluidWobble formula ; 7.0 sets the wobble oscillation speed, 3.8 spreads the wave across the ball based on distance from the impact point, 1.35 scales overall energy, 1.4 shapes the falloff curve and 0.26 caps how big the visual wobble gets
-    const fluidWobble = Math.sin(totalElapsedTime * 7.0 + dragDot * 3.8) * 
+    //HARDCODED VALUE ; fluidWobble formula ; 5.0 sets the wobble oscillation speed, 10.8 spreads the wave across the ball based on distance from the impact point, 1.35 scales overall energy, 1.4 shapes the falloff curve and 0.26 caps how big the visual wobble gets
+    const fluidWobble = Math.sin(totalElapsedTime * 5.0 + dragDot * 10.8) *
                         (jellyWobbleEnergy * 1.35) * Math.pow(dragDot, 1.4) * 0.26;
     if (!isNaN(fluidWobble)) scale += fluidWobble;
   }
-  
+
   if (Math.abs(movementWobble) > 0.001) {
     const moveDot = _normPos.dot(wobbleAxis);
-    //HARDCODED VALUE ; moveFluid formula ; 0.333 recenters the squared dot product so the wobble is symmetric front to back, 0.8 scales how visible the movement wobble is
-    const moveFluid = movementWobble * (moveDot * moveDot - 0.333) * 0.8;
+    //HARDCODED VALUE ; moveFluid formula ; 0.333 recenters the squared dot product so the wobble is symmetric front to back, 0.5 scales how visible the movement wobble is
+    const moveFluid = movementWobble * (moveDot * moveDot - 0.333) * 0.5;
     if (!isNaN(moveFluid)) scale += moveFluid;
   }
 
@@ -745,24 +942,39 @@ function updateParticleLayer(layer, deltaTime) {
   //HARDCODED VALUE ; damping ; how much particle velocity is absorbed each frame, prevents the spring from oscillating forever
   const damping = 1.5;
 
+  const driftAxis = layer.userData.driftAxis;
+  const driftSpeed = layer.userData.driftSpeed;
+
   for (let i = 0; i < count; i++) {
     const idx = i * 3;
-    
+
     //HARDCODED VALUE ; scatter magic numbers ; the large numbers like 1352.34 are just unique seeds per particle index so each one scatters differently, while 25.0 sets how far particles fly when dispersed and 10.0 adds a slower secondary drift
     const dispX = (Math.sin(i * 1352.34) * 25.0) + Math.sin(totalElapsedTime * 0.5 + i) * 10.0;
     const dispY = (Math.cos(i * 4132.21) * 25.0) + Math.cos(totalElapsedTime * 0.6 + i) * 10.0;
     const dispZ = (Math.sin(i * 7265.54) * 25.0) + Math.sin(totalElapsedTime * 0.7 + i) * 10.0;
 
-    const effectiveBaseX = base[idx] + dispX * easeDisperse;
-    const effectiveBaseY = base[idx + 1] + dispY * easeDisperse;
-    const effectiveBaseZ = base[idx + 2] + dispZ * easeDisperse;
-    
+    let effectiveBaseX = base[idx] + dispX * easeDisperse;
+    let effectiveBaseY = base[idx + 1] + dispY * easeDisperse;
+    let effectiveBaseZ = base[idx + 2] + dispZ * easeDisperse;
+
+    // Independent per particle wander, only present on layers that have
+    // driftAxis/driftSpeed set (currently just the halo). Each particle
+    // oscillates back and forth along its own random axis at its own
+    // random speed, so they don't all move together.
+    if (driftAxis) {
+      //HARDCODED VALUE ; drift amount ; how far a halo particle wanders from its base position, 4.0 sets the maximum wander distance
+      const driftAmount = Math.sin(totalElapsedTime * driftSpeed[i] + i) * 4.0;
+      effectiveBaseX += driftAxis[idx] * driftAmount;
+      effectiveBaseY += driftAxis[idx + 1] * driftAmount;
+      effectiveBaseZ += driftAxis[idx + 2] * driftAmount;
+    }
+
     _tempVector.set(effectiveBaseX, effectiveBaseY, effectiveBaseZ);
-    
+
     const fluidScale = calculateWobbleScale(_tempVector);
-    //HARDCODED VALUE ; smoothPulse scale ; how much the audio beat pulse expands this layer, 0.42 sets the overall pulse strength
-    const smoothPulse = beatPulse * 0.42 * layerReactivity;
-    
+    //HARDCODED VALUE ; smoothPulse scale ; how much the audio beat pulse expands this layer, 0.02 times PULSE_EXPANSION_SCALE sets the overall pulse strength
+    const smoothPulse = beatPulse * 0.02 * PULSE_EXPANSION_SCALE * layerReactivity;
+
     //HARDCODED VALUE ; twinkle formula ; 8.0 sets how fast particles twinkle and 1.5 sets how strong the twinkle gets at full dispersion
     const twinkle = 1.0 + (Math.abs(Math.sin(totalElapsedTime * 8.0 + i)) * easeDisperse * 1.5);
     const totalScale = (fluidScale + smoothPulse) * twinkle;
@@ -808,7 +1020,7 @@ function updateInternalStreams(deltaTime) {
       const t = stream.progressOffsets[i];
       const pt = stream.curve.getPoint(t);
       const idx = i * 3;
-      
+
       //HARDCODED VALUE ; scatter magic numbers ; unique per-particle seeds like 135.2 combined with a 20.0 spread and 10.0 secondary drift, controls how far internal stream particles scatter when dispersed
       const dispX = (Math.sin(i * 135.2) * 20.0) + Math.sin(totalElapsedTime + i) * 10.0;
       const dispY = (Math.cos(i * 413.2) * 20.0) + Math.cos(totalElapsedTime + i) * 10.0;
@@ -821,8 +1033,8 @@ function updateInternalStreams(deltaTime) {
       );
 
       const fluidScale = calculateWobbleScale(_tempVector);
-      //HARDCODED VALUE ; pulseShift ; how much the audio beat pulse swells this stream, 0.27 sets the strength
-      const pulseShift = 1.0 + (beatPulse * 0.27);
+      //HARDCODED VALUE ; pulseShift ; how much the audio beat pulse swells this stream, 0.27 times PULSE_EXPANSION_SCALE sets the strength
+      const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
       //HARDCODED VALUE ; twinkle formula ; 10.0 sets twinkle speed and 1.5 sets how strong it gets at full dispersion
       const twinkle = 1.0 + (Math.abs(Math.sin(totalElapsedTime * 10.0 + i)) * easeDisperse * 1.5);
       const totalScale = fluidScale * pulseShift * twinkle;
@@ -879,8 +1091,8 @@ function updateSurfaceFilaments(deltaTime) {
       }
 
       const fluidScale = calculateWobbleScale(_tempVector);
-      //HARDCODED VALUE ; pulseShift ; how much the audio beat pulse swells this filament, 0.27 sets the strength
-      const pulseShift = 1.0 + (beatPulse * 0.27);
+      //HARDCODED VALUE ; pulseShift ; how much the audio beat pulse swells this filament, 0.27 times PULSE_EXPANSION_SCALE sets the strength
+      const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
       //HARDCODED VALUE ; twinkle formula ; 10.0 sets twinkle speed and 1.5 sets how strong it gets at full dispersion
       const twinkle = 1.0 + (Math.abs(Math.sin(totalElapsedTime * 10.0 + i)) * easeDisperse * 1.5);
       const totalScale = fluidScale * pulseShift * twinkle;
@@ -905,25 +1117,25 @@ function updateMiniExplosions(deltaTime) {
   for (let s = 0; s < explosionsData.length; s++) {
     const exp = explosionsData[s];
     exp.life += deltaTime;
-    
+
     let lifeRatio = exp.life / exp.maxLife;
     if (lifeRatio > 1.0) lifeRatio = 1.0;
-    
+
     let opacity = 1.0;
     //HARDCODED VALUE ; fade start ; explosions stay fully opaque for the first 20 percent of their life, then fade out over the remaining 80 percent
     if (lifeRatio > 0.2) {
        opacity = 1.0 - ((lifeRatio - 0.2) / 0.8);
     }
     exp.mesh.material.opacity = opacity;
-    
+
     const posAttr = exp.mesh.geometry.getAttribute('position');
-    
+
     for (let i = 0; i < exp.particleCount; i++) {
       const idx = i * 3;
       exp.rawPositions[idx]     += exp.velocities[idx] * deltaTime;
       exp.rawPositions[idx + 1] += exp.velocities[idx + 1] * deltaTime;
       exp.rawPositions[idx + 2] += exp.velocities[idx + 2] * deltaTime;
-      
+
       //HARDCODED VALUE ; scatter magic numbers ; unique per-particle seeds combined with a 50.0 spread and 15.0 secondary drift, controls how far explosion particles scatter when dispersed
       const dispX = (Math.sin(i * 123.4) * 50.0) + Math.sin(totalElapsedTime + i) * 15.0;
       const dispY = (Math.cos(i * 567.8) * 50.0) + Math.cos(totalElapsedTime + i) * 15.0;
@@ -934,24 +1146,24 @@ function updateMiniExplosions(deltaTime) {
         exp.rawPositions[idx + 1] + dispY * easeDisperse,
         exp.rawPositions[idx + 2] + dispZ * easeDisperse
       );
-      
+
       const fluidScale = calculateWobbleScale(_tempVector);
-      //HARDCODED VALUE ; pulseShift ; how much the audio beat pulse swells the explosion, 0.27 sets the strength
-      const pulseShift = 1.0 + (beatPulse * 0.27);
+      //HARDCODED VALUE ; pulseShift ; how much the audio beat pulse swells the explosion, 0.27 times PULSE_EXPANSION_SCALE sets the strength
+      const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
       //HARDCODED VALUE ; twinkle formula ; 10.0 sets twinkle speed and 1.5 sets how strong it gets at full dispersion
       const twinkle = 1.0 + (Math.abs(Math.sin(totalElapsedTime * 10.0 + i)) * easeDisperse * 1.5);
       const totalScale = fluidScale * pulseShift * twinkle;
-      
+
       posAttr.setXYZ(i, _tempVector.x * totalScale, _tempVector.y * totalScale, _tempVector.z * totalScale);
     }
-    
+
     posAttr.needsUpdate = true;
-    
+
     if (exp.life >= exp.maxLife) {
       explosionsGroup.remove(exp.mesh);
       exp.mesh.geometry.dispose();
       exp.mesh.material.dispose();
-      
+
       const newExp = initMiniExplosion();
       explosionsData[s] = newExp;
       explosionsGroup.add(newExp.mesh);
@@ -979,7 +1191,7 @@ function updateMassiveSolarFlares(deltaTime) {
       }
 
       activeParticles++;
-      
+
       //HARDCODED VALUE ; scatter magic numbers ; unique per-particle seeds combined with a 70.0 spread and 15.0 secondary drift, controls how far flare particles scatter when dispersed
       const dispX = (Math.sin(i * 345.6) * 70.0) + Math.sin(totalElapsedTime + i) * 15.0;
       const dispY = (Math.cos(i * 789.0) * 70.0) + Math.cos(totalElapsedTime + i) * 15.0;
@@ -987,7 +1199,7 @@ function updateMassiveSolarFlares(deltaTime) {
 
       if (flare.particleStates[i] === 1) {
         //HARDCODED VALUE ; travel speed multiplier ; particles move 1.5 times faster than their base particleSpeeds value while flying along the arc
-        flare.progress[i] += flare.particleSpeeds[i] * deltaTime * 1.5; 
+        flare.progress[i] += flare.particleSpeeds[i] * deltaTime * 1.5;
 
         if (flare.progress[i] < 0) {
           posAttr.setXYZ(i, 9999, 9999, 9999);
@@ -1027,8 +1239,8 @@ function updateMassiveSolarFlares(deltaTime) {
         );
 
         const fluidScale = calculateWobbleScale(_tempVector);
-        //HARDCODED VALUE ; pulseShift ; how much the audio beat pulse swells the flare, 0.27 sets the strength
-        const pulseShift = 1.0 + (beatPulse * 0.27);
+        //HARDCODED VALUE ; pulseShift ; how much the audio beat pulse swells the flare, 0.27 times PULSE_EXPANSION_SCALE sets the strength
+        const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
         //HARDCODED VALUE ; twinkle formula ; 10.0 sets twinkle speed and 1.5 sets how strong it gets at full dispersion
         const twinkle = 1.0 + (Math.abs(Math.sin(totalElapsedTime * 10.0 + i)) * easeDisperse * 1.5);
         const totalScale = fluidScale * pulseShift * twinkle;
@@ -1045,7 +1257,7 @@ function updateMassiveSolarFlares(deltaTime) {
         }
 
         let currentP = new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
-        
+
         currentP.x -= dispX * easeDisperse;
         currentP.y -= dispY * easeDisperse;
         currentP.z -= dispZ * easeDisperse;
@@ -1055,15 +1267,15 @@ function updateMassiveSolarFlares(deltaTime) {
         currentP.addScaledVector(moveDir, (3.5 + Math.random() * 2.0) * deltaTime);
         //HARDCODED VALUE ; surface jitter ; keeps swept particles glued to the sphere surface with a tiny random wobble of plus or minus 0.075
         currentP.normalize().multiplyScalar(sphereRadius + (Math.random() - 0.5) * 0.15);
-        
+
         //Addback scatter
         currentP.x += dispX * easeDisperse;
         currentP.y += dispY * easeDisperse;
         currentP.z += dispZ * easeDisperse;
 
         const fluidScale = calculateWobbleScale(currentP);
-        //HARDCODED VALUE ; pulseShift ; how much the audio beat pulse swells the flare, 0.27 sets the strength
-        const pulseShift = 1.0 + (beatPulse * 0.27);
+        //HARDCODED VALUE ; pulseShift ; how much the audio beat pulse swells the flare, 0.27 times PULSE_EXPANSION_SCALE sets the strength
+        const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
         //HARDCODED VALUE ; twinkle formula ; 10.0 sets twinkle speed and 1.5 sets how strong it gets at full dispersion
         const twinkle = 1.0 + (Math.abs(Math.sin(totalElapsedTime * 10.0 + i)) * easeDisperse * 1.5);
         const totalScale = fluidScale * pulseShift * twinkle;
@@ -1100,19 +1312,22 @@ if (fullscreenBtn) {
 function updateParticleColors(hexValue) {
   baseColor.set(hexValue);
   OVERRIDE_COLOR = baseColor.getHex();
-  
-  // Force the animate() loop to recognize the new slider color 
+
+  // Force the animate() loop to recognize the new slider color
   // Apply it across all particle materials on the next frame.
   lastAppliedColorHex = -1;
 }
 
-// --- ADDED UI LOGIC FOR SLIDERS ---
+// UI logic for the settings sliders and the reset icon
 const settingsIcon = document.getElementById('settings-icon');
 const slidersContainer = document.getElementById('sliders-container');
 
 if (settingsIcon && slidersContainer) {
   settingsIcon.addEventListener('click', () => {
-    if (slidersContainer.style.display === 'none') {
+    // Check the actual computed display style instead of relying only on inline styles
+    const currentDisplay = window.getComputedStyle(slidersContainer).display;
+
+    if (currentDisplay === 'none') {
       slidersContainer.style.display = 'flex';
     } else {
       slidersContainer.style.display = 'none';
@@ -1120,7 +1335,7 @@ if (settingsIcon && slidersContainer) {
   });
 }
 
-const colorSlider = document.getElementById('color-slider');
+const colorSlider = document.getElementById('gradient-slider');
 const colorValLabel = document.getElementById('color-val');
 
 if (colorSlider) {
@@ -1132,6 +1347,11 @@ if (colorSlider) {
     }
     updateParticleColors(hexStr);
   });
+  // Run it once immediately so the color you actually see on load is
+  // derived from the slider's own default position, instead of the
+  // separate OVERRIDE_COLOR constant above. This keeps load-in and
+  // reset always producing the same color.
+  colorSlider.dispatchEvent(new Event('input'));
 }
 
 const camSlider = document.getElementById('cam-slider');
@@ -1161,7 +1381,56 @@ if (thresholdSlider) {
     bloomPass.threshold = parseFloat(e.target.value);
   });
 }
-// ----------------------------------
+
+const streamsSlider = document.getElementById('streams-slider');
+if (streamsSlider) {
+  streamsSlider.addEventListener('input', (e) => {
+    NUM_INTERNAL_STREAMS = parseInt(e.target.value, 10);
+    setInternalStreamCount(NUM_INTERNAL_STREAMS);
+  });
+}
+
+const filamentsSlider = document.getElementById('filaments-slider');
+if (filamentsSlider) {
+  filamentsSlider.addEventListener('input', (e) => {
+    NUM_SURFACE_FILAMENTS = parseInt(e.target.value, 10);
+    setSurfaceFilamentCount(NUM_SURFACE_FILAMENTS);
+  });
+}
+
+const explosionsSlider = document.getElementById('explosions-slider');
+if (explosionsSlider) {
+  explosionsSlider.addEventListener('input', (e) => {
+    NUM_MINI_EXPLOSIONS = parseInt(e.target.value, 10);
+    setMiniExplosionCount(NUM_MINI_EXPLOSIONS);
+  });
+}
+
+// Restart icon resets every slider back to the default value stated in its
+// HTML "value" attribute, then fires a real input event on each one so all
+// the listeners above re-apply that default the same way a manual drag would.
+const resetIcon = document.getElementById('reset-icon');
+const allSliders = [
+  colorSlider, camSlider, bloomSlider, radiusSlider, thresholdSlider,
+  streamsSlider, filamentsSlider, explosionsSlider
+];
+
+if (resetIcon) {
+  resetIcon.addEventListener('click', () => {
+    allSliders.forEach((slider) => {
+      if (!slider) return;
+      slider.value = slider.defaultValue;
+      slider.dispatchEvent(new Event('input'));
+    });
+  });
+}
+
+toggleUIButton.addEventListener("click", () => {
+    uiHidden = !uiHidden;
+
+    audioControls.style.display = uiHidden ? "none" : "";
+    topRightUI.style.display = uiHidden ? "none" : "";
+});
 
 //CONSTANT ANIMATION LOOP SYSTEM
 const clock = new THREE.Clock();
@@ -1189,26 +1458,25 @@ function animate() {
   const deltaTime = Math.min(clock.getDelta(), 0.1);
   totalElapsedTime += deltaTime;
 
-  //HARDCODED VALUE ; beat decay ; how quickly the beat intensity fades back to zero after a hit, 2.8 per second
-  beatIntensity = Math.max(0, beatIntensity - deltaTime * 2.8);
-  //HARDCODED VALUE ; beat smoothing ; how quickly the visible beat pulse catches up to the raw beat intensity, 12.0 controls the smoothing speed
-  beatPulse += (beatIntensity - beatPulse) * Math.min(1.0, deltaTime * 12.0);
-  
-  // ADDED FEATURE: Make the ball glow brighter dynamically per beat
-  bloomPass.strength = BLOOM_VAL + (beatPulse * 5);
+  beatIntensity *= Math.exp(-PULSE_DECAY_SPEED * deltaTime);
+  //HARDCODED VALUE ; beat smoothing ; how quickly the visible beat pulse catches up to the raw beat intensity, 14.0 controls the smoothing speed
+  beatPulse += (beatIntensity - beatPulse) * Math.min(1.0, deltaTime * 14.0);
+
+  // Make the ball glow brighter dynamically per beat
+  bloomPass.strength = BLOOM_VAL + (beatPulse * BLOOM_BRIGHTNESS_SCALE);
 
   //HARDCODED VALUE ; jelly wobble decay ; 0.18 is the fraction of wobble energy left after one full second, this decays the jelly wobble effect over time
   jellyWobbleEnergy *= Math.pow(0.18, deltaTime);
-  
+
   // Calculate Dispersion Easing
   if (currentDisperseFactor < targetDisperseFactor) {
     currentDisperseFactor = Math.min(1.0, currentDisperseFactor + deltaTime * DISPERSE_SPEED);
   } else if (currentDisperseFactor > targetDisperseFactor) {
     currentDisperseFactor = Math.max(0.0, currentDisperseFactor - deltaTime * AGGREGATE_SPEED);
   }
-  
-  easeDisperse = currentDisperseFactor < 0.5 
-    ? 4 * currentDisperseFactor * currentDisperseFactor * currentDisperseFactor 
+
+  easeDisperse = currentDisperseFactor < 0.5
+    ? 4 * currentDisperseFactor * currentDisperseFactor * currentDisperseFactor
     : 1 - Math.pow(-2 * currentDisperseFactor + 2, 3) / 2;
 
   //COLOR TRANSITION LOGIC
@@ -1233,6 +1501,7 @@ function animate() {
     internalStreamGroup.children.forEach(mesh => mesh.material.color.copy(activeColor));
     surfaceFilamentGroup.children.forEach(mesh => mesh.material.color.copy(activeColor));
     explosionsGroup.children.forEach(mesh => mesh.material.color.copy(activeColor));
+    audioExplosionsGroup.children.forEach(mesh => mesh.material.color.copy(activeColor));
     massiveFlareGroup.children.forEach(mesh => mesh.material.color.copy(activeColor));
   }
 
@@ -1245,18 +1514,18 @@ function animate() {
 
   if (!isDragging || interactionMode !== 'move') {
     //HARDCODED VALUE ; springK ; how strongly the ball is pulled back to the center when released, its spring stiffness
-    const springK = 8.0; 
+    const springK = 8.0;
     //HARDCODED VALUE ; dampC ; how much the return-to-center motion is slowed down so it doesn't overshoot forever
-    const dampC = 2.5; 
-    
+    const dampC = 2.5;
+
     let springForce = ballPos.clone().multiplyScalar(-springK);
     let dampingForce = ballVel.clone().multiplyScalar(-dampC);
     let leashAcceleration = springForce.add(dampingForce);
-    
+
     ballVel.add(leashAcceleration.multiplyScalar(deltaTime));
     ballPos.add(ballVel.clone().multiplyScalar(deltaTime));
   }
-  
+
   particleBall.position.copy(ballPos);
 
   //HARDCODED VALUE ; halo spin speed ; the outer halo spins independently , 0.08 around Y and 0.03 around X
@@ -1269,7 +1538,7 @@ function animate() {
   let accMag = currentAcc.length();
   if (accMag > 0.1) {
     wobbleAxis.lerp(currentAcc.clone().normalize(), deltaTime * 8.0).normalize();
-    movementWobbleVel -= accMag * 0.0015; 
+    movementWobbleVel -= accMag * 0.0015;
   }
 
   //HARDCODED VALUE ; wobbleK ; spring stiffness pulling the movement wobble back to zero
@@ -1281,7 +1550,7 @@ function animate() {
   movementWobble += movementWobbleVel * deltaTime;
 
   if (!isDragging || interactionMode !== 'spin') {
-    //HARDCODED VALUE ; spin return speed ; how fast the ball's spin eases back to  idle spin speed once dragging stops
+    //HARDCODED VALUE ; spin return speed ; how fast the ball's spin eases back to idle spin speed once dragging stops
     currentSpinY += (IDLE_SPIN_Y - currentSpinY) * (1.5 * deltaTime);
     currentSpinX += (IDLE_SPIN_X - currentSpinX) * (1.5 * deltaTime);
   }
@@ -1292,11 +1561,12 @@ function animate() {
   updateParticleLayer(innerCore, deltaTime);
   updateParticleLayer(outerShell, deltaTime);
   updateParticleLayer(outerHalo, deltaTime);
-  
+
   updateInternalStreams(deltaTime);
   updateSurfaceFilaments(deltaTime);
   updateMiniExplosions(deltaTime);
-  
+  updateAudioExplosions(deltaTime);
+
   if (easeDisperse < 0.5) {
     updateMassiveSolarFlareSpawning(deltaTime);
   }
@@ -1341,32 +1611,76 @@ async function startAudioCapture() {
     //HARDCODED VALUE ; bass frequency range ; the bass band is measured between 20 Hz and 140 Hz
     const bassStart = Math.floor(20 / binWidth);
     const bassEnd = Math.ceil(140 / binWidth);
+    //HARDCODED VALUE ; treble frequency range ; the hihat/cymbal band is measured between 5000 Hz and 10000 Hz
+    const trebleStart = Math.floor(5000 / binWidth);
+    const trebleEnd = Math.ceil(10000 / binWidth);
 
     startButton.textContent = 'Visualizer Running';
     startButton.disabled = true;
 
-    let lastBeatTime = 0;
+    //HARDCODED VALUE ; starting baselines ; small nonzero start so the first few frames don't read as a giant fake spike
+    let bassBaseline = 0.02;
+    let trebleBaseline = 0.02;
+    let lastProcessTime = performance.now();
 
     function processAudio() {
       requestAnimationFrame(processAudio);
       analyser.getByteFrequencyData(freqData);
 
-      let sum = 0;
-      for (let i = bassStart; i <= bassEnd; i++) {
-        sum += freqData[i];
-      }
-      const avg = sum / (bassEnd - bassStart + 1);
-      bassEnergy = avg / 255;
       const now = performance.now();
+      const dt = Math.min((now - lastProcessTime) / 1000, 0.1);
+      lastProcessTime = now;
 
-      //HARDCODED VALUE ; beat trigger ; beat fires when bass energy > 0.55 and at least 180 milliseconds have passed since the last beat, this prevents rapid double triggers
-      if (bassEnergy > 0.55 && (now - lastBeatTime) > 180) {
-        lastBeatTime = now;
-        triggerRandomParticleBeat(bassEnergy);
+      let bassSum = 0;
+      for (let i = bassStart; i <= bassEnd; i++) {
+        bassSum += freqData[i];
+      }
+      bassEnergy = bassSum / ((bassEnd - bassStart + 1) * 255);
+
+      let trebleSum = 0;
+      for (let i = trebleStart; i <= trebleEnd; i++) {
+        trebleSum += freqData[i];
+      }
+      const trebleEnergy = trebleSum / ((trebleEnd - trebleStart + 1) * 255);
+
+      //HARDCODED VALUE ; silence gate ; below this raw energy on both bands, treat it as silence and skip all triggering for the frame
+      if (bassEnergy < 0.045 && trebleEnergy < 0.045) {
+        if (bassDebugLabel) {
+          bassDebugLabel.textContent = `Bass: ${bassEnergy.toFixed(2)} | Treble: ${trebleEnergy.toFixed(2)} | Beat Intensity: ${beatIntensity.toFixed(2)}`;
+        }
+        return;
+      }
+
+      bassBaseline += (bassEnergy - bassBaseline) * Math.min(1.0, dt * BASELINE_FOLLOW_SPEED);
+      trebleBaseline += (trebleEnergy - trebleBaseline) * Math.min(1.0, dt * BASELINE_FOLLOW_SPEED);
+
+      if (explosionCooldown > 0) explosionCooldown -= dt;
+
+      const bassSpike = bassEnergy - bassBaseline;
+      const trebleSpike = trebleEnergy - trebleBaseline;
+
+      //HARDCODED VALUE ; pulse trigger threshold ; how far above its own baseline the bass has to spike before it counts as a beat
+      if (bassSpike > 0.25) {
+        triggerRandomParticleBeat(bassSpike, BASS_SENSITIVITY);
+      }
+
+      //HARDCODED VALUE ; treble pulse trigger threshold ; how far above its own baseline the treble has to spike before it counts as a hihat hit
+      if (trebleSpike > 0.15) {
+        triggerRandomParticleBeat(trebleSpike, TREBLE_SENSITIVITY);
+      }
+
+      //HARDCODED VALUE ; EXPLOSION_ENERGY_THRESHOLD ; raw bass loudness (0 to 1, not a spike) needed to fire a big burst, watch the debug label's Bass value during real playback to tune this
+      const EXPLOSION_ENERGY_THRESHOLD = 0.35;
+      //HARDCODED VALUE ; explosion cooldown ; minimum seconds between bursts so back-to-back hits don't overlap
+      if (bassEnergy > EXPLOSION_ENERGY_THRESHOLD && explosionCooldown <= 0) {
+        const bigExp = initAudioExplosion();
+        audioExplosionsData.push(bigExp);
+        audioExplosionsGroup.add(bigExp.mesh);
+        explosionCooldown = 0.35;
       }
 
       if (bassDebugLabel) {
-        bassDebugLabel.textContent = `Bass Energy: ${bassEnergy.toFixed(2)} | Beat Intensity: ${beatIntensity.toFixed(2)}`;
+        bassDebugLabel.textContent = `Bass: ${bassEnergy.toFixed(2)} | Baseline: ${bassBaseline.toFixed(2)}\nTreble: ${trebleEnergy.toFixed(2)} | Baseline: ${trebleBaseline.toFixed(2)}\nBeat Intensity: ${beatIntensity.toFixed(2)}`;
       }
     }
     processAudio();
