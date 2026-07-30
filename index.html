@@ -9,7 +9,7 @@
   <!-- Three.js Core CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
-  <!-- Post-Processing Dependencies (UNPKG CDN) -->
+  <!-- Post-Processing Dependencies -->
   <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
@@ -19,50 +19,71 @@
 </head>
 <body>
 
-  <!-- Container for the Three.js Canvas -->
+  <!-- Three.js Canvas -->
   <div id="scene-container"></div>
 
-  <!-- Audio Controls Overlay -->
+  <!-- Left UI -->
   <div id="audio-controls">
-    <div style="display: flex; gap: 10px; align-items: center;">
-      <button id="start-visualizer-button">Start Visualizer</button>
-      <button id="mode-toggle-btn">Mode: Spin</button>
-    </div>
-    <div id="bass-debug-label">Bass energy: not started</div>
-    
-    <!-- Settings Icon -->
-    <div id="settings-icon" style="cursor: pointer; font-size: 14px; margin-top: 4px; color: #888888;">⚙️</div>
 
-    <div id="sliders-container" style="display: none; flex-direction: column; gap: 6px; width: 100%;">
-      <!-- Color slider -->
-      <input type="range" id="color-slider" min="0" max="80" step="1" value="50" title="Adjust Particle Color">
-      
-      <!-- New sliders -->
-      <div style="display: flex; flex-direction: column; gap: 2px;">
-        <span style="font-size: 10px; color: #888888;">cam</span>
+    <button id="start-visualizer-button">Start Visualizer</button>
+    <button id="mode-toggle-btn">Mode: Spin</button>
+
+    <div id="bass-debug-label">Bass energy: not detected</div>
+
+    <div id="icon-row">
+      <div id="settings-icon">⚙️</div>
+      <div id="reset-icon" title="Reset sliders to defaults">⟲</div>
+    </div>
+
+    <div id="sliders-container">
+
+      <div>
+        <span>gradient</span>
+        <input type="range" id="gradient-slider" min="0" max="80" step="1" value="35">
+      </div>
+
+      <div>
+        <span>cam</span>
         <input type="range" id="cam-slider" min="0" max="60" step="1" value="30">
       </div>
-      
-      <div style="display: flex; flex-direction: column; gap: 2px;">
-        <span style="font-size: 10px; color: #888888;">bloom</span>
-        <input type="range" id="bloom-slider" min="0" max="5" step="0.1" value="1.8">
+
+      <div>
+        <span>bloom</span>
+        <input type="range" id="bloom-slider" min="0" max="5" step="0.1" value="1.6">
       </div>
-      
-      <div style="display: flex; flex-direction: column; gap: 2px;">
-        <span style="font-size: 10px; color: #888888;">radius</span>
+
+      <div>
+        <span>radius</span>
         <input type="range" id="radius-slider" min="-2" max="2" step="0.01" value="0.45">
       </div>
-      
-      <div style="display: flex; flex-direction: column; gap: 2px;">
-        <span style="font-size: 10px; color: #888888;">threshhold</span>
-        <input type="range" id="threshold-slider" min="0" max="0.05" step="0.001" value="0.005">
+
+      <div>
+        <span>threshold</span>
+        <input type="range" id="threshold-slider" min="0" max="0.05" step="0.001" value="0.0">
       </div>
+
+      <div>
+        <span>streams</span>
+        <input type="range" id="streams-slider" min="0" max="300" step="1" value="60">
+      </div>
+
+      <div>
+        <span>filaments</span>
+        <input type="range" id="filaments-slider" min="0" max="300" step="1" value="100">
+      </div>
+
+      <div>
+        <span>explosions</span>
+        <input type="range" id="explosions-slider" min="0" max="200" step="1" value="40">
+      </div>
+
     </div>
+
   </div>
 
   <!-- Top Right UI -->
   <div id="top-right-ui">
-    <div style="display: flex; gap: 12px; align-items: center;">
+    <div style="display: flex; gap: 10px; align-items: center;">
       <div id="fps-counter">0 FPS</div>
       <button id="fullscreen-btn" title="Toggle Fullscreen">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -73,6 +94,11 @@
     <button id="disperse-btn">Disperse</button>
   </div>
 
+  <!-- Always-visible UI toggle -->
+  <button id="toggle-ui-button">UI</button>
+
   <script src="app.js"></script>
+
 </body>
 </html>
+  
