@@ -12,17 +12,24 @@ Interactive web-based 3d particle visualizer built with Three.js  The applicatio
   * **Spin Mode:** Drag to rotate the particle ball with realistic inertia and (if flicked fast enough) fluid-like impact physics
   * **Move Mode:** Click and drag the sphere across the screen with an elastic resistance to the center screen.
 * **Particle Dispersion & Aggregation:** Toggle between a dispersed sphere state and an aggregated state with smooth color blending. (Only avaliable through spin mode)
-* **Customization Controls:** Includes 5 real time sliders, a full-screen toggle, and FPS counter.
-1. Red tone Brightness
+* **Customization Controls:** Includes Many real time sliders, a full-screen toggle, FPS counter, and UI Enable/Disable.
+---
+SLIDERS
+1. Red tone Gradient
 2. Camera Zoom
 3. Bloom Strength
 4. Bloom Radius
-5. Bloom Threshold 
+5. Bloom Threshold
+6. Internal Streams
+7. Surface Filaments
+8. CMEs
 
 ## <span style="color: yellow">Additional Notes</span>
 * Because the visualizer renders nearly 200,000 individual particles, each with their own unique `Xpos`/`Ypos`/`Zpos`/`spawnrate`/`movement`/`speed`/`purpose` and MORE along with real-time post-processing glow and physics calculations, it is very graphics-intensive. **A capable GPU is required** to run smoothly. Lag or performance drops on low-end devices.
 
 * Most immersive with oled screens in a dim/dark room.
+
+* Audio Visualizer works best with high tempo songs (rap, rock, hip-hop pop). Lana Del Rey won't work unfortunately :(
 
 
 ## <span style="color: yellow">Built with</span>
