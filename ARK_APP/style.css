@@ -106,6 +106,8 @@ body {
     font-size: 14px;
     color: #888;
     width: fit-content;
+
+    margin-top: -8px;
 }
 
 #reset-icon {
@@ -114,7 +116,7 @@ body {
     color: #888;
 
 
-    margin-top: -5px;
+    margin-top: -12px;
 }
 
 /* Sliders stay exactly the same width as the button */
@@ -249,12 +251,14 @@ body {
     font-weight: bold;
     text-align: right;
 
-    margin-right: 15px; /* Adjust this value */
+    margin-bottom: 0px;
+    margin-right: 12px; /* Adjust this value */
 
 }
 
 #disperse-btn {
-    background: #111;
+    width: 90px;
+    background-color: #111;
     color: #eaeaea;
 
     border: 1px solid #333;
@@ -264,10 +268,71 @@ body {
     font-size: 12px;
 
     cursor: pointer;
+    outline: none;
+    text-align: center;
 
-    transition: background-color .2s;
+    /* Allows linear-gradient background updates from appAudio.js to animate smoothly */
+    transition: border-color 0.2s, color 0.2s;
 }
 
 #disperse-btn:hover {
+    border-color: #555;
+}
+
+#music-player-box {
+    width: 100%;
+    box-sizing: border-box;
+
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 6px;
+
+    padding: 6px 7px;
+
+    font-family: -apple-system, sans-serif;
+}
+
+#now-playing-label {
+    text-align: left;
+    color: #888;
+    font-size: 6.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+#song-title-label {
+    text-align: center;
+    color: #eaeaea;
+    font-size: 9px;
+    font-weight: bold;
+
+    margin: 0px 0 8px 0;
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#player-controls {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+}
+
+#player-controls button {
     background: #1c1c1c;
+    color: #eaeaea;
+
+    border: 1px solid #333;
+    border-radius: 6px;
+
+    width: 20px;
+    height: 15px;
+
+    font-size: 7px;
+    cursor: pointer;
+}
+
+#player-controls button:hover {
+    background: #2a2a2a;
 }
