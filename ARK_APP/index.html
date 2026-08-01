@@ -27,7 +27,15 @@
 
     <button id="mode-toggle-btn">Mode: Spin</button>
 
-    <div id="bass-debug-label">Loading </div>
+    <div id="music-player-box">
+      <div id="now-playing-label">Now Playing</div>
+      <div id="song-title-label">Loading</div>
+      <div id="player-controls">
+        <button id="track-prev-btn" title="Previous track">⏮</button>
+        <button id="track-reset-btn" title="Restart track">⟲</button>
+        <button id="track-next-btn" title="Next track">⏭</button>
+      </div>
+    </div>
 
     <div id="icon-row">
       <div id="settings-icon">⚙️</div>
@@ -53,7 +61,7 @@
 
       <div>
         <span>radius</span>
-        <input type="range" id="radius-slider" min="-2" max="2" step="0.01" value="0.45">
+        <input type="range" id="radius-slider" min="-2" max="2" step="0.01" value="0.7">
       </div>
 
       <div>
@@ -83,7 +91,7 @@
   <!-- Top Right UI -->
   <div id="top-right-ui">
     <div id="fps-counter">0 FPS</div>
-    <button id="disperse-btn">Disperse</button>
+    <button id="disperse-btn">Implode</button>
   </div>
 
   <!-- Always-visible UI toggle -->
