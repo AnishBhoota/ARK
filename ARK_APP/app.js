@@ -14,6 +14,232 @@ const maxColor = new THREE.Color(0xff0000);
 const activeColor = new THREE.Color(); 
 let lastAppliedColorHex = -1; 
 
+//SOUND EFFECTS SETUP
+//HARDCODED VALUE ; sfx folder path ; change this if your audio files live somewhere other than a "sfx" folder next to app.js
+const SFX_FOLDER = 'sfx/';
+
+const fireBackgroundAudio = new Audio(SFX_FOLDER + 'firebackground.wav');
+fireBackgroundAudio.loop = true;
+//HARDCODED VALUE ; fireBackgroundAudio.volume ; how loud the idle fire loop is, 0 to 1
+fireBackgroundAudio.volume = 0.75;
+
+const spawnAudio = new Audio(SFX_FOLDER + 'spawn.wav');
+//HARDCODED VALUE ; spawnAudio.volume ; how loud the one-time load-in sound is, 0 to 1
+spawnAudio.volume = 0.8;
+const ambientTrackFiles = ['Ahead Slow.mp3', 'Alien Expanse.mp3', 'Blood Crawlers.mp3', 'Bright.wav', 'Crush Depth.mp3', 'Cyber Sphere.wav', 'Dark Matter Reactor.mp3', 'Eerie Heartbeat.mp3', 'Finding Life.mp3', 'Found in Space.wav', 'Hollow.wav', 'Interstellar Crickets.wav', 'Into the Unknown.mp3', 'Lava Castle.mp3', 'LiminalTunnel.wav', 'Original Inhabitants.mp3', 'Rave.wav', 'Space Wind.wav', 'Static.wav', 'Temple.wav', 'The Forest.mp3', 'Tropical Eden.mp3', 'Twinkle.wav'];
+let ambientTrackIndex = 0;
+const ambientAudio = new Audio(SFX_FOLDER + ambientTrackFiles[ambientTrackIndex]);
+//HARDCODED VALUE ; ambientAudio.volume ; how loud the ambient playlist is underneath the fire loop, 0 to 1
+ambientAudio.volume = 0.8;
+
+const songTitleLabel = document.getElementById('song-title-label');
+function updateSongTitleDisplay() {
+  if (songTitleLabel) {
+    songTitleLabel.textContent = ambientTrackFiles[ambientTrackIndex].replace(/\.(wav|mp3)$/i, '');
+  }
+}
+
+// Loads a track by index (wrapping in both directions) and plays it unless
+// system audio is currently active. Used by ended/next/previous.
+function playAmbientTrack(index) {
+  ambientTrackIndex = ((index % ambientTrackFiles.length) + ambientTrackFiles.length) % ambientTrackFiles.length;
+  ambientAudio.src = SFX_FOLDER + ambientTrackFiles[ambientTrackIndex];
+  updateSongTitleDisplay();
+  if (!systemAudioActive) {
+    ambientAudio.play().catch(() => {});
+  }
+}
+updateSongTitleDisplay();
+
+ambientAudio.addEventListener('ended', () => {
+  playAmbientTrack(ambientTrackIndex + 1);
+});
+
+const trackPrevBtn = document.getElementById('track-prev-btn');
+const trackResetBtn = document.getElementById('track-reset-btn');
+const trackNextBtn = document.getElementById('track-next-btn');
+
+if (trackPrevBtn) {
+  trackPrevBtn.addEventListener('click', () => {
+    playAmbientTrack(ambientTrackIndex - 1);
+  });
+}
+if (trackResetBtn) {
+  trackResetBtn.addEventListener('click', () => {
+    ambientAudio.currentTime = 0;
+    if (!systemAudioActive) {
+      ambientAudio.play().catch(() => {});
+    }
+  });
+}
+if (trackNextBtn) {
+  trackNextBtn.addEventListener('click', () => {
+    playAmbientTrack(ambientTrackIndex + 1);
+  });
+}
+
+// Every Audio element that should be routed to real speakers instead of
+// whatever the system default output is (so sfx don't loop back into BlackHole).
+const allSfxAudioElements = [fireBackgroundAudio, spawnAudio, ambientAudio];
+
+// A pool of overlapping Audio elements so rapid one-shot sounds (explosions, flares)
+// don't cut each other off when one is already playing.
+function createSfxPool(fileName, poolSize, volume) {
+  const pool = [];
+  for (let i = 0; i < poolSize; i++) {
+    const a = new Audio(SFX_FOLDER + fileName);
+    a.volume = volume;
+    pool.push(a);
+    allSfxAudioElements.push(a);
+  }
+  let nextIndex = 0;
+  return function playFromPool() {
+    const a = pool[nextIndex];
+    nextIndex = (nextIndex + 1) % pool.length;
+    a.currentTime = 0;
+    a.play().catch(() => {});
+  };
+}
+
+//HARDCODED VALUE ; pool size + volume for audioexplosion.mp3 ; raise pool size if hits still get cut off, lower volume to make them subtler
+const playAudioExplosionSfx = createSfxPool('audioexplosion.mp3', 6, 0.02);
+//HARDCODED VALUE ; pool size + volume for flare.mp3 ; raise pool size if hits still get cut off, lower volume to make them subtler
+const playFlareSfx = createSfxPool('flare.mp3', 4, 0.05);
+
+// Reused Audio elements so playing thunder doesn't create a new object every time.
+const thunder1Sound = new Audio('sfx/thunder1.mp3');
+const thunder2Sound = new Audio('sfx/thunder2.mp3');
+//HARDCODED VALUE ; THUNDER_VOLUME ; how loud thunder1 and thunder2 play, 0 to 1 (currently 40% of full volume)
+const THUNDER_VOLUME = 0.2;
+thunder1Sound.volume = THUNDER_VOLUME;
+thunder2Sound.volume = THUNDER_VOLUME;
+
+//HARDCODED VALUE ; thunder interval range ; each thunder plays randomly somewhere between 12 and 60 seconds after its last play
+let thunder1Timer = 0;
+let thunder1Interval = 20 + Math.random() * 60;
+
+let thunder2Timer = 0;
+let thunder2Interval = 20 + Math.random() * 60;
+
+//HARDCODED VALUE ; THUNDER_BLOOM_MULTIPLIER ; how many times brighter the bloom peaks at during a flicker
+const THUNDER_BLOOM_MULTIPLIER = 2;
+//HARDCODED VALUE ; THUNDER_BLOOM_DURATION ; how many seconds the brightening effect lasts, matches the thunder audio length
+const THUNDER_BLOOM_DURATION = 10.0;
+//HARDCODED VALUE ; THUNDER_FLICKER_COUNT ; how many up-and-down brightness pulses happen across the full duration
+const THUNDER_FLICKER_COUNT = 4;
+
+let thunderBloomBoostTimer = 0;
+
+function triggerThunderBloomBoost() {
+  thunderBloomBoostTimer = THUNDER_BLOOM_DURATION;
+}
+
+function updateThunder1(deltaTime) {
+  thunder1Timer += deltaTime;
+  if (thunder1Timer >= thunder1Interval) {
+    thunder1Timer -= thunder1Interval;
+    thunder1Interval = 12 + Math.random() * 48;
+    thunder1Sound.currentTime = 0;
+    thunder1Sound.play().catch(() => {});
+    triggerThunderBloomBoost();
+  }
+}
+
+function updateThunder2(deltaTime) {
+  thunder2Timer += deltaTime;
+  if (thunder2Timer >= thunder2Interval) {
+    thunder2Timer -= thunder2Interval;
+    thunder2Interval = 12 + Math.random() * 48;
+    thunder2Sound.currentTime = 0;
+    thunder2Sound.play().catch(() => {});
+    triggerThunderBloomBoost();
+  }
+}
+
+
+// Points every sfx Audio element at a real output device instead of the system
+// default, so these sounds don't get picked up again by the BlackHole capture.
+async function routeSfxToRealOutputDevice() {
+  if (!allSfxAudioElements[0].setSinkId) {
+    console.warn('setSinkId is not supported in this environment; sfx will use the default output.');
+    return;
+  }
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const realOutput = devices.find(
+    d => d.kind === 'audiooutput' && !/blackhole/i.test(d.label)
+  );
+  if (!realOutput) return;
+
+  for (const el of allSfxAudioElements) {
+    try {
+      await el.setSinkId(realOutput.deviceId);
+    } catch (err) {
+      console.warn('Could not set sink for an sfx element:', err);
+    }
+  }
+}
+
+
+// Turns the idle ambient soundscape (fire + ambient playlist) off the moment real
+// system audio (music from YouTube, Spotify, etc) is detected, and back on once it stops.
+let systemAudioActive = false;
+//HARDCODED VALUE ; SYSTEM_AUDIO_DWELL_TIME ; seconds of sustained sound needed before ambient sfx pause, avoids one loud blip flipping it off
+const SYSTEM_AUDIO_DWELL_TIME = 1.2;
+//HARDCODED VALUE ; SYSTEM_AUDIO_QUIET_DWELL_TIME ; seconds of quiet needed before ambient sfx resume, avoids a brief pause in a song flipping it back on too fast
+const SYSTEM_AUDIO_QUIET_DWELL_TIME = 2.5;
+let systemAudioAboveTimer = 0;
+let systemAudioBelowTimer = 0;
+
+function setSystemAudioActive(isActive) {
+  if (isActive === systemAudioActive) return;
+  systemAudioActive = isActive;
+  if (isActive) {
+    fireBackgroundAudio.pause();
+    ambientAudio.pause();
+  } else {
+    fireBackgroundAudio.play().catch(() => {});
+    ambientAudio.play().catch(() => {});
+  }
+}
+
+function updateSystemAudioDetection(dt, currentBassEnergy, currentTrebleEnergy) {
+  //HARDCODED VALUE ; detection floor ; raw energy level counted as "real sound present"
+  const isLoudThisFrame = currentBassEnergy > 0.045 || currentTrebleEnergy > 0.045;
+
+  if (isLoudThisFrame) {
+    systemAudioAboveTimer += dt;
+    systemAudioBelowTimer = 0;
+  } else {
+    systemAudioBelowTimer += dt;
+    systemAudioAboveTimer = 0;
+  }
+
+  if (!systemAudioActive && systemAudioAboveTimer >= SYSTEM_AUDIO_DWELL_TIME) {
+    setSystemAudioActive(true);
+  }
+  if (systemAudioActive && systemAudioBelowTimer >= SYSTEM_AUDIO_QUIET_DWELL_TIME) {
+    setSystemAudioActive(false);
+  }
+}
+
+// Autoplay policies can block audio before any user interaction, so try once on
+// window load and retry on the first click/keydown if it was blocked.
+window.addEventListener('load', () => {
+  fireBackgroundAudio.play().catch(() => {});
+  ambientAudio.play().catch(() => {});
+});
+function retryAmbientAudioOnce() {
+  if (!systemAudioActive) {
+    fireBackgroundAudio.play().catch(() => {});
+    ambientAudio.play().catch(() => {});
+  }
+  window.removeEventListener('click', retryAmbientAudioOnce);
+  window.removeEventListener('keydown', retryAmbientAudioOnce);
+}
+window.addEventListener('click', retryAmbientAudioOnce);
+window.addEventListener('keydown', retryAmbientAudioOnce);
+
+
 const toggleUIButton = document.getElementById("toggle-ui-button");
 const audioControls = document.getElementById("audio-controls");
 const topRightUI = document.getElementById("top-right-ui");
@@ -49,7 +275,7 @@ let BLOOM_VAL = 1.8;
 const bloomPass = new THREE.UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
   BLOOM_VAL,
-  0.45,
+  0.7,
   0.005
 );
 composer.addPass(bloomPass);
@@ -93,13 +319,97 @@ function randomGaussian() {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
+// ---- Implosion spiral system ----
+// Every particle layer (core, shell, halo, streams, filaments) gets one of these
+// generated once at creation. It gives each individual particle its own random
+// spin axis, how many times it loops on its way to center, and a small speed
+// variance, so the collapse doesn't look uniform/mechanical.
+function createSpiralData(count) {
+  const axisX = new Float32Array(count);
+  const axisY = new Float32Array(count);
+  const axisZ = new Float32Array(count);
+  const turns = new Float32Array(count);
+  const speedVar = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const axis = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize();
+    axisX[i] = axis.x;
+    axisY[i] = axis.y;
+    axisZ[i] = axis.z;
+    //HARDCODED VALUE ; spiral turn count ; each particle loops between 2 and 6 times on its way to center
+    turns[i] = 2 + Math.random() * 4;
+    //HARDCODED VALUE ; spiral speed variance ; small per-particle timing variety so the collapse isn't perfectly uniform
+    speedVar[i] = 0.85 + Math.random() * 0.3;
+  }
+  return { axisX, axisY, axisZ, turns, speedVar };
+}
+
+const _spiralDir = new THREE.Vector3();
+const _spiralAxis = new THREE.Vector3();
+const _implosionOut = new THREE.Vector3();
+
+// Differential rotation around the vertical axis: particles close to the axis
+// (near the poles) spin much faster than particles far from it. That speed
+// difference is what reads as two jet-like beams shooting out along the poles
+// during the chaotic disperse/burst/aggregate state.
+function applyVortexMath(vec, amount, time) {
+  if (amount < 0.001) return;
+  const dist = Math.sqrt(vec.x * vec.x + vec.z * vec.z);
+
+  const angle = (10.0 / (dist + 1.0)) * amount * 1.5 + time * 3.0 * amount;
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+
+  const nx = vec.x * cosA - vec.z * sinA;
+  const nz = vec.x * sinA + vec.z * cosA;
+
+  vec.x = nx;
+  vec.z = nz;
+  vec.y += amount * 4.0 * Math.sin(dist * 0.75 - time * 5.0);
+}
+
+// Takes a particle's normal computed position (x,y,z) and blends it toward a
+// spiral path that shrinks into the center as collapseBlend goes 0 to 1, while
+// implosionInfluence (also 0 to 1) controls how much that spiral affects the
+// final result vs. the particle's normal position. Keeping these as two
+// separate values is what lets the "let go early" spring-back fade the
+// spiral's influence out smoothly without ever running the spiral itself
+// backwards (which would look like a reversed animation).
+function applyImplosionSpiral(x, y, z, i, spiralData, outVec) {
+  if (implosionInfluence <= 0.0001) {
+    outVec.set(x, y, z);
+    return outVec;
+  }
+
+  _spiralDir.set(x, y, z);
+  const radius = _spiralDir.length();
+  if (radius < 0.0001) {
+    outVec.set(0, 0, 0);
+    return outVec;
+  }
+  _spiralDir.divideScalar(radius);
+
+  const turns = spiralData.turns[i];
+  const speedVar = spiralData.speedVar[i];
+  _spiralAxis.set(spiralData.axisX[i], spiralData.axisY[i], spiralData.axisZ[i]);
+
+  const spiralAngle = collapseBlend * turns * Math.PI * 2;
+  _spiralDir.applyAxisAngle(_spiralAxis, spiralAngle);
+
+  const shrinkFactor = Math.max(0, 1 - collapseBlend * speedVar);
+  _spiralDir.multiplyScalar(radius * shrinkFactor);
+
+  outVec.set(x, y, z).lerp(_spiralDir, implosionInfluence);
+  return outVec;
+}
+
 let explosionCooldown = 0;
 const audioExplosionsGroup = new THREE.Group();
 particleBall.add(audioExplosionsGroup);
 const audioExplosionsData = [];
 
 function initAudioExplosion() {
-  const particleCount = 400 + Math.floor(Math.random() * 400);
+  const particleCount = 600 + Math.floor(Math.random() * 400);
   const sphereRadius = 6.2; 
   const centerP = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize().multiplyScalar(sphereRadius);
 
@@ -180,6 +490,7 @@ function updateAudioExplosions(deltaTime) {
         exp.rawPositions[idx + 1] + dispY * easeDisperse,
         exp.rawPositions[idx + 2] + dispZ * easeDisperse
       );
+      applyVortexMath(_tempVector, easeDisperse, totalElapsedTime);
       
       const fluidScale = calculateWobbleScale(_tempVector);
       const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
@@ -229,6 +540,7 @@ function createInnerCore() {
   points.userData.basePositions = positions.slice();
   points.userData.velocity = new Float32Array(count * 3);
   points.userData.reactivity = 1.3;
+  points.userData.spiralData = createSpiralData(count);
   return points;
 }
 
@@ -255,6 +567,7 @@ function createThickOuterShell() {
   points.userData.basePositions = positions.slice();
   points.userData.velocity = new Float32Array(count * 3);
   points.userData.reactivity = 1.0;
+  points.userData.spiralData = createSpiralData(count);
   return points;
 }
 
@@ -298,6 +611,7 @@ function createOuterHaloCloud() {
   }
   points.userData.driftAxis = driftAxis;
   points.userData.driftSpeed = driftSpeed;
+  points.userData.spiralData = createSpiralData(count);
 
   return points;
 }
@@ -356,7 +670,8 @@ function initInternalStream() {
   const mesh = new THREE.Points(geometry, material);
   return { mesh, curve, particleCount, progressOffsets, speeds, localOffsets, life: 0, maxLife: 3 + Math.random() * 4,
            driftAxis: new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize(),
-           driftSpeed: (Math.random() - 0.5) * 0.8 };
+           driftSpeed: (Math.random() - 0.5) * 0.8,
+           spiralData: createSpiralData(particleCount) };
 }
 
 for (let s = 0; s < NUM_INTERNAL_STREAMS; s++) {
@@ -428,7 +743,8 @@ function initSurfaceFilament() {
   });
 
   const mesh = new THREE.Points(geometry, material);
-  return { mesh, curve, particleCount, progressOffsets, speeds, localOffsets, life: 0, maxLife: 3 + Math.random() * 4 };
+  return { mesh, curve, particleCount, progressOffsets, speeds, localOffsets, life: 0, maxLife: 3 + Math.random() * 4,
+           spiralData: createSpiralData(particleCount) };
 }
 
 for (let f = 0; f < NUM_SURFACE_FILAMENTS; f++) {
@@ -541,8 +857,8 @@ let massiveFlareTimer = 0;
 
 function initMassiveSolarFlare() {
   const sphereRadius = 6.2;
-  const numSubStreams = 10 + Math.floor(Math.random() * 4);
-  const particlesPerStream = 300 + Math.floor(Math.random() * 250);
+  const numSubStreams = 15 + Math.floor(Math.random() * 4);
+  const particlesPerStream = 500 + Math.floor(Math.random() * 250);
   const totalParticles = numSubStreams * particlesPerStream;
 
   const coreDir = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize();
@@ -610,6 +926,7 @@ function initMassiveSolarFlare() {
   });
 
   const mesh = new THREE.Points(geometry, material);
+  mesh.frustumCulled = false; // Add this line to prevent it from disappearing
   return { mesh, subCurves, originP, landP, particleCount: totalParticles, progress,
            streamIndices, particleSpeeds, particleStates, sweepLife, maxSweepLife, sweepDirs, localOffsets };
 }
@@ -623,16 +940,41 @@ function spawnMassiveSolarFlare() {
 for (let i = 0; i < 4; i++) {
   spawnMassiveSolarFlare();
 }
-
+//spawn 1 flare every second with 60% chance, and 25% chance of playing flare.mp3
 function updateMassiveSolarFlareSpawning(deltaTime) {
   massiveFlareTimer += deltaTime;
   if (massiveFlareTimer >= 1) {
     massiveFlareTimer -= 1;
-    if (Math.random() < 0.8) {
+    if (Math.random() < 0.6) {
       spawnMassiveSolarFlare();
+      if (Math.random() < 0.25) { //25% chance of playing flare.mp3
+        playFlareSfx();
+      }
     }
   }
 }
+
+//New function for randomly spawning audio explosions.
+//HARDCODED VALUE ; timer offset ; starts 0.3 seconds "ahead" of the flare timer so both don't always fire on the same frame
+let audioExplosionSpawnTimer = -0.3;
+function updateAudioExplosionSpawning(deltaTime) {
+  audioExplosionSpawnTimer += deltaTime;
+  if (audioExplosionSpawnTimer >= 1) {
+    audioExplosionSpawnTimer -= 1;
+    //HARDCODED VALUE ; spawn chance ; 50% chance to spawn 1 random big audio explosion every 1 second
+    if (Math.random() < 0.5) {
+      const bigExp = initAudioExplosion();
+      audioExplosionsData.push(bigExp);
+      audioExplosionsGroup.add(bigExp.mesh);
+
+      //HARDCODED VALUE ; sfx chance ; 65% chance of playing audioexplosion.mp3 alongside the visual
+      if (Math.random() < 0.45) {
+        playAudioExplosionSfx();
+      }
+    }
+  }
+}
+
 
 let isDispersed = false;
 let targetDisperseFactor = 0;
@@ -640,24 +982,284 @@ let currentDisperseFactor = 0;
 let easeDisperse = 0;
 
 const DISPERSE_SPEED = 0.5;   
-const AGGREGATE_SPEED = 0.2; 
+const AGGREGATE_SPEED = 0.13; 
+
+// ---- Singularity core ----
+// A dedicated small cluster of particles representing the collapsed core.
+// Kept separate from the real particles (which spiral toward it and fade
+// out via implosionInfluence) since it needs its own color flicker/pulse/
+// jitter independent of the rest of the sphere's coloring system.
+//HARDCODED VALUE ; SINGULARITY_PARTICLE_COUNT ; how many particles make up the dense collapsed core cluster
+const SINGULARITY_PARTICLE_COUNT = 800;
+//HARDCODED VALUE ; SINGULARITY_CORE_RADIUS ; physical size (world units) of the vibrating core cluster
+const SINGULARITY_CORE_RADIUS = 0.2;
+//HARDCODED VALUE ; SINGULARITY_JITTER_SPEED ; how fast the core visibly shakes
+const SINGULARITY_JITTER_SPEED = 18.0;
+//HARDCODED VALUE ; SINGULARITY_PULSE_SPEED ; how fast the core pulses in size
+const SINGULARITY_PULSE_SPEED = 10.0;
+//HARDCODED VALUE ; SINGULARITY_PULSE_AMOUNT ; how much bigger the core gets at the peak of each pulse, 0.4 = 40% larger
+const SINGULARITY_PULSE_AMOUNT = 0.4;
+//HARDCODED VALUE ; SINGULARITY_FLICKER_SPEED ; how fast the core flickers between red shades
+const SINGULARITY_FLICKER_SPEED = 22.0;
+//HARDCODED VALUE ; SINGULARITY_BASE_SIZE ; the core particle base render size before pulsing
+const SINGULARITY_BASE_SIZE = 0.16;
+
+function createSingularityCore() {
+  const positions = new Float32Array(SINGULARITY_PARTICLE_COUNT * 3);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const material = new THREE.PointsMaterial({
+    color: 0xff2200, size: SINGULARITY_BASE_SIZE, map: glowTexture, transparent: true,
+    opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true
+  });
+  const points = new THREE.Points(geometry, material);
+
+  // Each particle gets its own random resting spot inside the cluster radius,
+  // plus its own random jitter axis/phase/speed - this is what makes it look
+  // like a fuzzy vibrating cloud instead of a repeating geometric pattern.
+  const restX = new Float32Array(SINGULARITY_PARTICLE_COUNT);
+  const restY = new Float32Array(SINGULARITY_PARTICLE_COUNT);
+  const restZ = new Float32Array(SINGULARITY_PARTICLE_COUNT);
+  const jitterAxisX = new Float32Array(SINGULARITY_PARTICLE_COUNT);
+  const jitterAxisY = new Float32Array(SINGULARITY_PARTICLE_COUNT);
+  const jitterAxisZ = new Float32Array(SINGULARITY_PARTICLE_COUNT);
+  const jitterPhase = new Float32Array(SINGULARITY_PARTICLE_COUNT);
+  const jitterSpeed = new Float32Array(SINGULARITY_PARTICLE_COUNT);
+
+  for (let i = 0; i < SINGULARITY_PARTICLE_COUNT; i++) {
+    const restDir = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize();
+    const restDist = Math.random() * SINGULARITY_CORE_RADIUS;
+    restX[i] = restDir.x * restDist;
+    restY[i] = restDir.y * restDist;
+    restZ[i] = restDir.z * restDist;
+
+    const jitterAxis = new THREE.Vector3(randomGaussian(), randomGaussian(), randomGaussian()).normalize();
+    jitterAxisX[i] = jitterAxis.x;
+    jitterAxisY[i] = jitterAxis.y;
+    jitterAxisZ[i] = jitterAxis.z;
+    jitterPhase[i] = Math.random() * Math.PI * 2;
+    jitterSpeed[i] = 0.7 + Math.random() * 0.6;
+  }
+
+  points.userData.restX = restX;
+  points.userData.restY = restY;
+  points.userData.restZ = restZ;
+  points.userData.jitterAxisX = jitterAxisX;
+  points.userData.jitterAxisY = jitterAxisY;
+  points.userData.jitterAxisZ = jitterAxisZ;
+  points.userData.jitterPhase = jitterPhase;
+  points.userData.jitterSpeed = jitterSpeed;
+
+  return points;
+}
+
+const singularityCoreMesh = createSingularityCore();
+particleBall.add(singularityCoreMesh);
+
+const _singularityColorA = new THREE.Color(0xff2200);
+const _singularityColorB = new THREE.Color(0xff9090);
+const _singularityColorMix = new THREE.Color();
+
+function updateSingularityCore(deltaTime) {
+  const posAttr = singularityCoreMesh.geometry.getAttribute('position');
+  const count = posAttr.count;
+  const data = singularityCoreMesh.userData;
+
+  //HARDCODED VALUE ; SINGULARITY_JITTER_AMOUNT ; how far each particle wanders from its resting spot each shake, relative to the core radius
+  const SINGULARITY_JITTER_AMOUNT = SINGULARITY_CORE_RADIUS * 0.6;
+
+  for (let i = 0; i < count; i++) {
+    const wave = Math.sin(totalElapsedTime * SINGULARITY_JITTER_SPEED * data.jitterSpeed[i] + data.jitterPhase[i]);
+    const jitterAmount = wave * SINGULARITY_JITTER_AMOUNT;
+
+    posAttr.setXYZ(
+      i,
+      data.restX[i] + data.jitterAxisX[i] * jitterAmount,
+      data.restY[i] + data.jitterAxisY[i] * jitterAmount,
+      data.restZ[i] + data.jitterAxisZ[i] * jitterAmount
+    );
+  }
+  posAttr.needsUpdate = true;
+
+  const pulseWave = (Math.sin(totalElapsedTime * SINGULARITY_PULSE_SPEED) + 1) / 2;
+  singularityCoreMesh.material.size = SINGULARITY_BASE_SIZE * (1 + pulseWave * SINGULARITY_PULSE_AMOUNT);
+
+  const flickerWave = (Math.sin(totalElapsedTime * SINGULARITY_FLICKER_SPEED) + 1) / 2;
+  _singularityColorMix.copy(_singularityColorA).lerp(_singularityColorB, flickerWave);
+  singularityCoreMesh.material.color.copy(_singularityColorMix);
+
+  singularityCoreMesh.material.opacity = collapseBlend * implosionInfluence;
+}
+
+// ---- Implosion / Burst sequence ----
+// States: 'idle' (normal) -> 'charging' (button held, spiraling inward) ->
+// (if released early) 'releasing' (smooth spring back, no reverse spiral) -> 'idle'
+// (if held the full duration) 'silence' (0.5s dead audio gap) -> 'bursting' (violent outward burst) -> 'done'
+// 'done' waits for a click on "Aggregate" -> 'reforming' (reuses the existing
+// disperse/aggregate calming system) -> 'idle'
+let implodeState = 'idle';
+let implodeChargeTimer = 0;
+let implodeSilenceTimer = 0;
+let implodeBurstTimer = 0;
+let implodeSfxTimer = null;
+let implodeSfxPlayed = false;
+let implodeReleaseTimer = 0;
+let implodeReleaseStartInfluence = 0;
+
+// collapseBlend only ever increases while charging (frozen the instant you let go
+// or once fully collapsed) - it drives how far along the spiral path each particle
+// is. implosionInfluence is the separate blend weight between "normal position" and
+// "spiral position" - this separation is what lets the release spring-back fade the
+// spiral out smoothly without ever running the spiral formula backwards.
+let collapseBlend = 0;
+let implosionInfluence = 0;
+let sphereAudioReactivityPaused = false;
+
+//HARDCODED VALUE ; IMPLODE_HOLD_DURATION ; how many seconds the button must be held down for the sphere to fully collapse
+const IMPLODE_HOLD_DURATION = 3.0;
+//HARDCODED VALUE ; IMPLODE_SILENCE_DURATION ; seconds of total silence between the collapse finishing and the burst starting
+const IMPLODE_SILENCE_DURATION = 2;
+//HARDCODED VALUE ; IMPLODE_SFX_DELAY ; seconds after the burst begins before implode.wav actually plays
+const IMPLODE_SFX_DELAY = 0.01;
+//HARDCODED VALUE ; IMPLODE_BURST_DURATION ; how many seconds the outward burst takes to fully play out
+const IMPLODE_BURST_DURATION = 5;
+//HARDCODED VALUE ; IMPLODE_RELEASE_SPRING_DURATION ; how many seconds it takes to smoothly spring back if the button is let go early
+const IMPLODE_RELEASE_SPRING_DURATION = 2;
+//HARDCODED VALUE ; VORTEX_SPIN_SPEED ; extra spin speed (radians/sec) added during the burst for the swirling vortex look, decays to 0 across the burst
+const VORTEX_SPIN_SPEED = 10.0;
+
+const aggregateAudio = new Audio(SFX_FOLDER + 'aggregate.wav');
+//HARDCODED VALUE ; aggregateAudio.volume ; plays when the hold starts, and again when the final "Aggregate" click reforms the sphere
+aggregateAudio.volume = 1;
+const implodeAudio = new Audio(SFX_FOLDER + 'implode.wav');
+//HARDCODED VALUE ; implodeAudio.volume ; plays once the hold finishes and the burst begins
+implodeAudio.volume = 1;
+allSfxAudioElements.push(aggregateAudio, implodeAudio);
 
 const disperseBtn = document.getElementById('disperse-btn');
-if (disperseBtn) {
-  disperseBtn.addEventListener('click', () => {
-    isDispersed = !isDispersed;
-    if (isDispersed) {
-      targetDisperseFactor = 1.0;
-      disperseBtn.textContent = 'Aggregate';
-    } else {
-      targetDisperseFactor = 0.0;
-      disperseBtn.textContent = 'Disperse';
+
+function startImplodeCharge() {
+  if (implodeState !== 'idle') return;
+  implodeState = 'charging';
+  implodeChargeTimer = 0;
+  sphereAudioReactivityPaused = true;
+}
+
+function releaseImplodeCharge() {
+  if (implodeState !== 'charging') return;
+  implodeState = 'releasing';
+  implodeReleaseTimer = 0;
+  implodeReleaseStartInfluence = implosionInfluence;
+  if (disperseBtn) disperseBtn.style.setProperty('--charge-fill', '0%');
+}
+
+function startAggregateReform() {
+  if (implodeState !== 'done') return;
+  targetDisperseFactor = 0.0; // reuses the existing calming system below (currentDisperseFactor easing at AGGREGATE_SPEED)
+  implodeState = 'reforming';
+  aggregateAudio.currentTime = 0;
+  aggregateAudio.play().catch(() => {});
+}
+
+// Drives the whole sequence forward each frame; called from animate().
+function updateImplosionSequence(deltaTime) {
+  // Runs independently of which state we're in below, so the delayed implode.wav
+  // still fires even if the burst's visual duration finishes before the delay does.
+  if (implodeSfxTimer !== null && !implodeSfxPlayed) {
+    implodeSfxTimer += deltaTime;
+    if (implodeSfxTimer >= IMPLODE_SFX_DELAY) {
+      implodeSfxPlayed = true;
+      implodeAudio.currentTime = 0;
+      implodeAudio.play().catch(() => {});
     }
+  }
+
+  if (implodeState === 'charging') {
+    implodeChargeTimer += deltaTime;
+    const progress = Math.min(1, implodeChargeTimer / IMPLODE_HOLD_DURATION);
+    // Quartic ease-in: starts noticeably slow, then rapidly accelerates toward
+    // the singularity near the end - a much more "cooler going inward" feel
+    // than a gentle constant pull. Particles that started closer to center
+    // have less distance left to cover, so they finish their spiral sooner
+    // even though every particle shares this same timing curve.
+    collapseBlend = progress * progress * progress * progress;
+    // implosionInfluence ramps to full much faster than collapseBlend itself -
+    // this means the render is almost always showing the pure spiral position
+    // rather than a blend between "normal" and "spiral", which is what was
+    // causing the hazy/smeared look before.
+    implosionInfluence = Math.min(1, progress / 0.15);
+    if (disperseBtn) disperseBtn.style.setProperty('--charge-fill', (progress * 100) + '%');
+
+    if (implodeChargeTimer >= IMPLODE_HOLD_DURATION) {
+      collapseBlend = 1;
+      implosionInfluence = 1;
+      implodeState = 'silence';
+      implodeSilenceTimer = 0;
+      fireBackgroundAudio.pause();
+      ambientAudio.pause();
+    }
+  } else if (implodeState === 'releasing') {
+    implodeReleaseTimer += deltaTime;
+    const t = Math.min(1, implodeReleaseTimer / IMPLODE_RELEASE_SPRING_DURATION);
+    const eased = 1 - Math.pow(1 - t, 3); // ease-out: smooth spring back, never snaps
+    implosionInfluence = implodeReleaseStartInfluence * (1 - eased);
+
+    if (t >= 1) {
+      implosionInfluence = 0;
+      collapseBlend = 0;
+      sphereAudioReactivityPaused = false;
+      implodeState = 'idle';
+    }
+  } else if (implodeState === 'silence') {
+    implodeSilenceTimer += deltaTime;
+    if (implodeSilenceTimer >= IMPLODE_SILENCE_DURATION) {
+      implodeState = 'bursting';
+      implodeBurstTimer = 0;
+      implodeSfxTimer = 0;
+      implodeSfxPlayed = false;
+      targetDisperseFactor = 1.0; // layers the existing chaotic turbulence on top of the outward burst
+      if (!systemAudioActive) {
+        fireBackgroundAudio.play().catch(() => {});
+        ambientAudio.play().catch(() => {});
+      }
+    }
+  } else if (implodeState === 'bursting') {
+    implodeBurstTimer += deltaTime;
+    const burstProgress = Math.min(1, implodeBurstTimer / IMPLODE_BURST_DURATION);
+    const eased = 1 - Math.pow(1 - burstProgress, 3); // fast initial burst, settles toward the end
+    implosionInfluence = 1 - eased;
+
+    const vortexSpin = VORTEX_SPIN_SPEED * (1 - burstProgress);
+    particleBall.rotation.y += vortexSpin * deltaTime;
+
+    if (implodeBurstTimer >= IMPLODE_BURST_DURATION) {
+      implosionInfluence = 0;
+      collapseBlend = 0;
+      implodeState = 'done';
+      if (disperseBtn) disperseBtn.textContent = 'Aggregate';
+    }
+  } else if (implodeState === 'reforming') {
+    if (currentDisperseFactor <= 0.001) {
+      sphereAudioReactivityPaused = false;
+      implodeState = 'idle';
+      if (disperseBtn) disperseBtn.textContent = 'Disperse';
+    }
+  }
+
+  updateSingularityCore(deltaTime);
+}
+
+if (disperseBtn) {
+  disperseBtn.addEventListener('mousedown', startImplodeCharge);
+  disperseBtn.addEventListener('mouseup', releaseImplodeCharge);
+  disperseBtn.addEventListener('mouseleave', releaseImplodeCharge);
+  disperseBtn.addEventListener('click', () => {
+    if (implodeState === 'done') startAggregateReform();
   });
 }
 
 const INITIAL_SPIN_Y = 5.0;
-const IDLE_SPIN_Y    = 0.3;
+const IDLE_SPIN_Y    = 0.25;
 const IDLE_SPIN_X    = 0;
 
 let interactionMode = 'spin';
@@ -668,12 +1270,8 @@ if (modeToggleBtn) {
       interactionMode = 'move';
       modeToggleBtn.textContent = 'Mode: Move';
       if (disperseBtn) disperseBtn.style.display = 'none';
-      
-      if (isDispersed) {
-        isDispersed = false;
-        targetDisperseFactor = 0.0;
-        disperseBtn.textContent = 'Disperse';
-      }
+
+      if (implodeState === 'charging') releaseImplodeCharge();
     } else {
       interactionMode = 'spin';
       modeToggleBtn.textContent = 'Mode: Spin';
@@ -686,6 +1284,7 @@ let isDragging = false;
 let lastMouseX = 0, lastMouseY = 0;
 let currentSpinX = 0;
 let currentSpinY = INITIAL_SPIN_Y;
+//spawnAudio.play().catch(() => {});
 
 let jellyImpactPoint = new THREE.Vector3(0, 0, 1);
 let jellyWobbleEnergy = 0;
@@ -801,8 +1400,8 @@ function calculateWobbleScale(posVector) {
 
   if (jellyWobbleEnergy > 0.001) {
     const dragDot = Math.max(0, _normPos.dot(jellyImpactPoint));
-    const fluidWobble = Math.sin(totalElapsedTime * 5.0 + dragDot * 10.8) * 
-                        (jellyWobbleEnergy * 1.35) * Math.pow(dragDot, 1.4) * 0.26;
+    const fluidWobble = Math.sin(totalElapsedTime * 6.0 + dragDot * 10.8) * 
+                        (jellyWobbleEnergy * 1.35) * Math.pow(dragDot, 1.4) * 0.45;
     if (!isNaN(fluidWobble)) scale += fluidWobble;
   }
   
@@ -847,6 +1446,7 @@ function updateParticleLayer(layer, deltaTime) {
     }
     
     _tempVector.set(effectiveBaseX, effectiveBaseY, effectiveBaseZ);
+    applyVortexMath(_tempVector, easeDisperse, totalElapsedTime);
     
     const fluidScale = calculateWobbleScale(_tempVector);
     const smoothPulse = beatPulse * 0.02 * PULSE_EXPANSION_SCALE * layerReactivity;
@@ -862,7 +1462,17 @@ function updateParticleLayer(layer, deltaTime) {
     vel[idx + 1] += ((targetY - _tempVector.y) * stiffness - vel[idx + 1] * damping) * deltaTime;
     vel[idx + 2] += ((targetZ - _tempVector.z) * stiffness - vel[idx + 2] * damping) * deltaTime;
 
-    posAttr.setXYZ(i, _tempVector.x + vel[idx] * deltaTime, _tempVector.y + vel[idx + 1] * deltaTime, _tempVector.z + vel[idx + 2] * deltaTime);
+    const finalX = _tempVector.x + vel[idx] * deltaTime;
+    const finalY = _tempVector.y + vel[idx + 1] * deltaTime;
+    const finalZ = _tempVector.z + vel[idx + 2] * deltaTime;
+
+    const spiralData = layer.userData.spiralData;
+    if (spiralData) {
+      applyImplosionSpiral(finalX, finalY, finalZ, i, spiralData, _implosionOut);
+      posAttr.setXYZ(i, _implosionOut.x, _implosionOut.y, _implosionOut.z);
+    } else {
+      posAttr.setXYZ(i, finalX, finalY, finalZ);
+    }
   }
   posAttr.needsUpdate = true;
 }
@@ -901,13 +1511,23 @@ function updateInternalStreams(deltaTime) {
         pt.y + stream.localOffsets[idx + 1] + dispY * easeDisperse,
         pt.z + stream.localOffsets[idx + 2] + dispZ * easeDisperse
       );
+      applyVortexMath(_tempVector, easeDisperse, totalElapsedTime);
 
       const fluidScale = calculateWobbleScale(_tempVector);
       const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
       const twinkle = 1.0 + (Math.abs(Math.sin(totalElapsedTime * 10.0 + i)) * easeDisperse * 1.5);
       const totalScale = fluidScale * pulseShift * twinkle;
 
-      posAttr.setXYZ(i, _tempVector.x * totalScale, _tempVector.y * totalScale, _tempVector.z * totalScale);
+      const streamX = _tempVector.x * totalScale;
+      const streamY = _tempVector.y * totalScale;
+      const streamZ = _tempVector.z * totalScale;
+
+      if (stream.spiralData) {
+        applyImplosionSpiral(streamX, streamY, streamZ, i, stream.spiralData, _implosionOut);
+        posAttr.setXYZ(i, _implosionOut.x, _implosionOut.y, _implosionOut.z);
+      } else {
+        posAttr.setXYZ(i, streamX, streamY, streamZ);
+      }
     }
     posAttr.needsUpdate = true;
 
@@ -954,12 +1574,23 @@ function updateSurfaceFilaments(deltaTime) {
         _tempVector.lerp(shellTarget, Math.min(1.0, dieProgress * 1.5));
       }
 
+      applyVortexMath(_tempVector, easeDisperse, totalElapsedTime);
+
       const fluidScale = calculateWobbleScale(_tempVector);
       const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
       const twinkle = 1.0 + (Math.abs(Math.sin(totalElapsedTime * 10.0 + i)) * easeDisperse * 1.5);
       const totalScale = fluidScale * pulseShift * twinkle;
 
-      posAttr.setXYZ(i, _tempVector.x * totalScale, _tempVector.y * totalScale, _tempVector.z * totalScale);
+      const filX = _tempVector.x * totalScale;
+      const filY = _tempVector.y * totalScale;
+      const filZ = _tempVector.z * totalScale;
+
+      if (fil.spiralData) {
+        applyImplosionSpiral(filX, filY, filZ, i, fil.spiralData, _implosionOut);
+        posAttr.setXYZ(i, _implosionOut.x, _implosionOut.y, _implosionOut.z);
+      } else {
+        posAttr.setXYZ(i, filX, filY, filZ);
+      }
     }
     posAttr.needsUpdate = true;
 
@@ -1006,6 +1637,7 @@ function updateMiniExplosions(deltaTime) {
         exp.rawPositions[idx + 1] + dispY * easeDisperse,
         exp.rawPositions[idx + 2] + dispZ * easeDisperse
       );
+      applyVortexMath(_tempVector, easeDisperse, totalElapsedTime);
       
       const fluidScale = calculateWobbleScale(_tempVector);
       const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
@@ -1090,6 +1722,7 @@ function updateMassiveSolarFlares(deltaTime) {
           curvePt.y + flare.localOffsets[idx + 1] * Math.sin(t * Math.PI) + dispY * easeDisperse,
           curvePt.z + flare.localOffsets[idx + 2] * Math.sin(t * Math.PI) + dispZ * easeDisperse
         );
+        applyVortexMath(_tempVector, easeDisperse, totalElapsedTime);
 
         const fluidScale = calculateWobbleScale(_tempVector);
         const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
@@ -1120,6 +1753,8 @@ function updateMassiveSolarFlares(deltaTime) {
         currentP.x += dispX * easeDisperse;
         currentP.y += dispY * easeDisperse;
         currentP.z += dispZ * easeDisperse;
+
+        applyVortexMath(currentP, easeDisperse, totalElapsedTime);
 
         const fluidScale = calculateWobbleScale(currentP);
         const pulseShift = 1.0 + (beatPulse * 0.27 * PULSE_EXPANSION_SCALE);
@@ -1292,7 +1927,15 @@ function animate() {
   beatIntensity *= Math.exp(-PULSE_DECAY_SPEED * deltaTime);
   beatPulse += (beatIntensity - beatPulse) * Math.min(1.0, deltaTime * 14.0);
   
-  bloomPass.strength = BLOOM_VAL + (beatPulse * BLOOM_BRIGHTNESS_SCALE);
+  if (thunderBloomBoostTimer > 0) {
+    thunderBloomBoostTimer -= deltaTime;
+    const elapsed = THUNDER_BLOOM_DURATION - thunderBloomBoostTimer;
+    const flickerWave = (Math.sin(elapsed * THUNDER_FLICKER_COUNT * Math.PI * 2 / THUNDER_BLOOM_DURATION) + 1) / 2;
+    const boostedStrength = BLOOM_VAL + (BLOOM_VAL * (THUNDER_BLOOM_MULTIPLIER - 1) * flickerWave);
+    bloomPass.strength = boostedStrength;
+  } else {
+    bloomPass.strength = BLOOM_VAL + (sphereAudioReactivityPaused ? 0 : beatPulse * BLOOM_BRIGHTNESS_SCALE);
+  }
 
   jellyWobbleEnergy *= Math.pow(0.18, deltaTime);
   
@@ -1348,6 +1991,8 @@ function animate() {
   
   particleBall.position.copy(ballPos);
 
+  updateImplosionSequence(deltaTime);
+
   outerHalo.rotation.y += 0.08 * deltaTime;
   outerHalo.rotation.x += 0.03 * deltaTime;
 
@@ -1380,18 +2025,33 @@ function animate() {
   
   updateInternalStreams(deltaTime);
   updateSurfaceFilaments(deltaTime);
-  updateMiniExplosions(deltaTime);
-  updateAudioExplosions(deltaTime);
-  
-  if (easeDisperse < 0.5) {
-    updateMassiveSolarFlareSpawning(deltaTime);
+
+  const implosionSequenceActive = (implodeState !== 'idle');
+  explosionsGroup.visible = !implosionSequenceActive;
+  audioExplosionsGroup.visible = !implosionSequenceActive;
+  massiveFlareGroup.visible = !implosionSequenceActive;
+
+  if (!implosionSequenceActive) {
+    updateMiniExplosions(deltaTime);
+    updateAudioExplosions(deltaTime);
+    updateMassiveSolarFlares(deltaTime);
   }
-  updateMassiveSolarFlares(deltaTime);
+
+  if (easeDisperse < 0.5 && implodeState === 'idle') {
+    updateMassiveSolarFlareSpawning(deltaTime);
+    updateAudioExplosionSpawning(deltaTime);
+  }
+  if (implodeState === 'idle') {
+    updateThunder1(deltaTime);
+    updateThunder2(deltaTime);
+  }
 
   composer.render();
 }
 
 animate();
+spawnAudio.play().catch(() => {});
+
 
 const bassDebugLabel = document.getElementById('bass-debug-label');
 
@@ -1404,6 +2064,8 @@ async function startAudioCapture() {
   try {
     const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     permissionStream.getTracks().forEach(track => track.stop());
+
+    await routeSfxToRealOutputDevice();
 
     const devices = await navigator.mediaDevices.enumerateDevices();
     const blackholeDevice = devices.find(
@@ -1458,6 +2120,8 @@ async function startAudioCapture() {
       }
       const trebleEnergy = trebleSum / ((trebleEnd - trebleStart) * 255);
 
+      updateSystemAudioDetection(dt, bassEnergy, trebleEnergy);
+
       bassBaseline += (bassEnergy - bassBaseline) * Math.min(1.0, dt * BASELINE_FOLLOW_SPEED);
       trebleBaseline += (trebleEnergy - trebleBaseline) * Math.min(1.0, dt * BASELINE_FOLLOW_SPEED);
 
@@ -1465,20 +2129,23 @@ async function startAudioCapture() {
 
       const bassSpike = bassEnergy - bassBaseline;
       const trebleSpike = trebleEnergy - trebleBaseline;
-      if (bassSpike > 0.065) {
-        triggerRandomParticleBeat(bassSpike, BASS_SENSITIVITY);
-      }
-      const EXPLOSION_ENERGY_THRESHOLD = 0.6; // raw bass loudness (0-1) needed to trigger an explosion, check the debug label's "Bass:" value to tune this
-      if (bassEnergy > EXPLOSION_ENERGY_THRESHOLD && explosionCooldown <= 0) {
-        const bigExp = initAudioExplosion();
-        audioExplosionsData.push(bigExp);
-        audioExplosionsGroup.add(bigExp.mesh);
 
-        explosionCooldown = 0.25;
-      }
+      if (!sphereAudioReactivityPaused) {
+        if (bassSpike > 0.065) {
+          triggerRandomParticleBeat(bassSpike, BASS_SENSITIVITY);
+        }
+        const EXPLOSION_ENERGY_THRESHOLD = 0.6; // raw bass loudness (0-1) needed to trigger an explosion, check the debug label's "Bass:" value to tune this
+        if (bassEnergy > EXPLOSION_ENERGY_THRESHOLD && explosionCooldown <= 0) {
+          const bigExp = initAudioExplosion();
+          audioExplosionsData.push(bigExp);
+          audioExplosionsGroup.add(bigExp.mesh);
 
-      if (trebleSpike > 0.1) {
-        triggerRandomParticleBeat(trebleSpike, TREBLE_SENSITIVITY);
+          explosionCooldown = 0.25;
+        }
+
+        if (trebleSpike > 0.1) {
+          triggerRandomParticleBeat(trebleSpike, TREBLE_SENSITIVITY);
+        }
       }
 
       if (bassDebugLabel) {
